@@ -55,9 +55,6 @@ st.markdown(
 if "history" not in st.session_state:
     st.session_state.history: List[Dict[str, str]] = []
 
-if "query_input" not in st.session_state:
-    st.session_state["query_input"] = ""
-
 if "faiss_loaded" not in st.session_state:
     st.session_state.faiss_loaded = False
 
@@ -117,11 +114,10 @@ def ask_qa_chain(qa_chain, query: str) -> str:
 st.title("🐔 Chikka AI Assistant")
 st.write("Ask me about broilers — I will respond using my knowledge base.")
 
-with st.form(key="query_form"):
+with st.form(key="query_form", clear_on_submit=True):  # Added clear_on_submit=True
     user_query = st.text_input(
         "Ask me about broilers:",
         key="query_input",
-        value=st.session_state.get("query_input", ""),
         placeholder="Type your question here..."
     )
     submitted = st.form_submit_button("Send")
@@ -153,16 +149,13 @@ if submitted and user_query and user_query.strip():
     # 1) Add user message to history
     st.session_state.history.insert(0, {"role": "User", "content": q})
 
-    # 2) Clear the input safely after submission
-    st.session_state.query_input = ""
-
-    # 3) Show thinking spinner
+    # 2) Show thinking spinner
     placeholder = st.empty()
     with st.spinner("🐔 ChikkaBot is thinking..."):
         answer_text = ask_qa_chain(qa_chain, q)
     placeholder.empty()
 
-    # 4) Add assistant reply
+    # 3) Add assistant reply
     st.session_state.history.insert(0, {"role": "ChikkaBot", "content": answer_text})
 
 # -------------------------
@@ -195,3 +188,8 @@ with chat_box:
 # -------------------------
 st.write("")
 st.caption("Note: Conversation is stored in-memory (session state). If you restart the app or session, history will be lost.")
+
+# Add a clear conversation button
+if st.button("Clear Conversation"):
+    st.session_state.history = []
+    st.rerun()
