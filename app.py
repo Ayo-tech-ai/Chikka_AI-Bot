@@ -112,12 +112,6 @@ def ask_qa_chain(qa_chain, query: str) -> str:
 
 
 # -------------------------
-# Input clearing callback
-# -------------------------
-def clear_input():
-    st.session_state.query_input = ""  # safely clears input after submission
-
-# -------------------------
 # App header & Input form
 # -------------------------
 st.title("🐔 Chikka AI Assistant")
@@ -128,8 +122,7 @@ with st.form(key="query_form"):
         "Ask me about broilers:",
         key="query_input",
         value=st.session_state.get("query_input", ""),
-        placeholder="Type your question here...",
-        on_change=clear_input  # <-- new: clears input after submit
+        placeholder="Type your question here..."
     )
     submitted = st.form_submit_button("Send")
 
@@ -160,7 +153,8 @@ if submitted and user_query and user_query.strip():
     # 1) Add user message to history
     st.session_state.history.insert(0, {"role": "User", "content": q})
 
-    # 2) Removed manual assignment; input is cleared automatically via callback
+    # 2) Clear the input safely after submission
+    st.session_state.query_input = ""
 
     # 3) Show thinking spinner
     placeholder = st.empty()
