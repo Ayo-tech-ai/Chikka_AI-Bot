@@ -50,11 +50,14 @@ st.markdown(
 )
 
 # -------------------------
-# Session state init
+# Session state init (patched)
 # -------------------------
 if "history" not in st.session_state:
     # Newest messages should be at index 0 (so latest appears at top)
     st.session_state.history: List[Dict[str, str]] = []
+
+if "query_input" not in st.session_state:
+    st.session_state["query_input"] = ""   # <-- Fix applied
 
 if "faiss_loaded" not in st.session_state:
     st.session_state.faiss_loaded = False
@@ -131,7 +134,11 @@ st.write("Ask me about broilers — I will respond using my knowledge base.")
 
 # Input at the top in a small form (mobile-friendly)
 with st.form(key="query_form"):
-    user_query = st.text_input("Ask me about broilers:", key="query_input", placeholder="Type your question here...")
+    user_query = st.text_input(
+        "Ask me about broilers:",
+        key="query_input",
+        placeholder="Type your question here..."
+    )
     submitted = st.form_submit_button("Send")
 
 # -------------------------
@@ -183,8 +190,6 @@ st.markdown("### Conversation")
 chat_box = st.container()
 
 with chat_box:
-    # Use a scrollable box for history
-    # We'll render history in order (index 0 newest -> top)
     st.markdown('<div class="chat-container">', unsafe_allow_html=True)
     if not st.session_state.history:
         st.markdown("<p style='color: #888'>No messages yet — ask a question above.</p>", unsafe_allow_html=True)
@@ -194,7 +199,6 @@ with chat_box:
             content = msg.get("content", "")
             css_class = "user" if role == "User" else "bot"
             label = role if role == "User" else "ChikkaBot"
-            # safe HTML bubble
             bubble = f"""
                 <div class="msg {css_class}">
                   <div class="role">{label}</div>
