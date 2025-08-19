@@ -2,5 +2,13 @@ streamlit
 langchain
 langchain-community
 langchain-groq
+langchain-huggingface
+faiss-cpu
+huggingface-hub
+
+streamlit
+langchain
+langchain-community
+langchain-groq
 faiss-cpu
 sentence-transformers
