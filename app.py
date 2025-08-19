@@ -50,14 +50,14 @@ st.markdown(
 )
 
 # -------------------------
-# Session state init (patched)
+# Session state init
 # -------------------------
 if "history" not in st.session_state:
     # Newest messages should be at index 0 (so latest appears at top)
     st.session_state.history: List[Dict[str, str]] = []
 
 if "query_input" not in st.session_state:
-    st.session_state["query_input"] = ""   # <-- Fix applied
+    st.session_state["query_input"] = ""   # <-- Fix here
 
 if "faiss_loaded" not in st.session_state:
     st.session_state.faiss_loaded = False
@@ -67,10 +67,6 @@ if "faiss_loaded" not in st.session_state:
 # -------------------------
 @st.cache_resource(show_spinner=False)
 def load_vectorstore(faiss_path: str):
-    """
-    Load the FAISS index from the repo path.
-    This will instantiate the embeddings object (Hugging Face).
-    """
     from langchain_community.vectorstores import FAISS
     from langchain_huggingface import HuggingFaceEmbeddings
 
@@ -81,9 +77,6 @@ def load_vectorstore(faiss_path: str):
 
 @st.cache_resource(show_spinner=False)
 def init_llm_from_groq(model_name: str = "llama-3.3-70b-versatile"):
-    """
-    Initialize ChatGroq LLM. Uses GROQ_API_KEY from Streamlit secrets.
-    """
     try:
         groq_key = st.secrets["GROQ_API_KEY"]
     except Exception:
@@ -96,9 +89,6 @@ def init_llm_from_groq(model_name: str = "llama-3.3-70b-versatile"):
 
 
 def make_qa_chain(llm, vectorstore):
-    """
-    Build a RetrievalQA chain WITHOUT returning source documents (we won't display sources).
-    """
     from langchain.chains import RetrievalQA
 
     retriever = vectorstore.as_retriever()
@@ -107,10 +97,6 @@ def make_qa_chain(llm, vectorstore):
 
 
 def ask_qa_chain(qa_chain, query: str) -> str:
-    """
-    Robust invocation wrapper: try .invoke() first (modern), fallback to direct call.
-    Returns the textual answer.
-    """
     try:
         out = qa_chain.invoke({"query": query})
         if isinstance(out, dict) and "result" in out:
@@ -137,6 +123,7 @@ with st.form(key="query_form"):
     user_query = st.text_input(
         "Ask me about broilers:",
         key="query_input",
+        value=st.session_state.get("query_input", ""),  # <-- Safe clearing
         placeholder="Type your question here..."
     )
     submitted = st.form_submit_button("Send")
@@ -144,12 +131,12 @@ with st.form(key="query_form"):
 # -------------------------
 # Load FAISS & LLM lazily (only once)
 # -------------------------
-FAISS_PATH = "rag_assets/faiss_index"  # path inside the repo
+FAISS_PATH = "rag_assets/faiss_index"
 try:
     if not st.session_state.faiss_loaded:
         with st.spinner("Loading knowledge base and model (one-time on startup)..."):
             vectorstore = load_vectorstore(FAISS_PATH)
-            llm = init_llm_from_groq()  # uses model in code; change parameter if you want another
+            llm = init_llm_from_groq()
             qa_chain = make_qa_chain(llm, vectorstore)
             st.session_state.faiss_loaded = True
             st.session_state._qa_chain = qa_chain
@@ -168,20 +155,18 @@ if submitted and user_query and user_query.strip():
     # 1) Add user message to history (newest at index 0)
     st.session_state.history.insert(0, {"role": "User", "content": q})
 
-    # 2) Clear the input immediately
-    st.session_state["query_input"] = ""
+    # 2) Removed manual assignment to st.session_state["query_input"]
+    # Streamlit automatically handles clearing via the value param in text_input
 
     # 3) Show a thinking spinner while the model computes
     placeholder = st.empty()
     with st.spinner("🐔 ChikkaBot is thinking..."):
         answer_text = ask_qa_chain(qa_chain, q)
 
-    placeholder.empty()  # remove spinner area
+    placeholder.empty()
 
-    # 4) Add assistant reply to history (newest at index 0)
+    # 4) Add assistant reply to history
     st.session_state.history.insert(0, {"role": "ChikkaBot", "content": answer_text})
-
-    # Rerun will show updated history and cleared input automatically.
 
 # -------------------------
 # Chat history display (newest at top)
@@ -211,5 +196,5 @@ with chat_box:
 # -------------------------
 # Footer / small note
 # -------------------------
-st.write("")  # spacing
+st.write("")
 st.caption("Note: Conversation is stored in-memory (session state). If you restart the app or session, history will be lost.")
