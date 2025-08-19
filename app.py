@@ -53,11 +53,10 @@ st.markdown(
 # Session state init
 # -------------------------
 if "history" not in st.session_state:
-    # Newest messages should be at index 0 (so latest appears at top)
     st.session_state.history: List[Dict[str, str]] = []
 
 if "query_input" not in st.session_state:
-    st.session_state["query_input"] = ""   # <-- Fix here
+    st.session_state["query_input"] = ""
 
 if "faiss_loaded" not in st.session_state:
     st.session_state.faiss_loaded = False
@@ -113,18 +112,24 @@ def ask_qa_chain(qa_chain, query: str) -> str:
 
 
 # -------------------------
+# Input clearing callback
+# -------------------------
+def clear_input():
+    st.session_state.query_input = ""  # safely clears input after submission
+
+# -------------------------
 # App header & Input form
 # -------------------------
 st.title("🐔 Chikka AI Assistant")
 st.write("Ask me about broilers — I will respond using my knowledge base.")
 
-# Input at the top in a small form (mobile-friendly)
 with st.form(key="query_form"):
     user_query = st.text_input(
         "Ask me about broilers:",
         key="query_input",
-        value=st.session_state.get("query_input", ""),  # <-- Safe clearing
-        placeholder="Type your question here..."
+        value=st.session_state.get("query_input", ""),
+        placeholder="Type your question here...",
+        on_change=clear_input  # <-- new: clears input after submit
     )
     submitted = st.form_submit_button("Send")
 
@@ -152,20 +157,18 @@ qa_chain = st.session_state._qa_chain
 if submitted and user_query and user_query.strip():
     q = user_query.strip()
 
-    # 1) Add user message to history (newest at index 0)
+    # 1) Add user message to history
     st.session_state.history.insert(0, {"role": "User", "content": q})
 
-    # 2) Removed manual assignment to st.session_state["query_input"]
-    # Streamlit automatically handles clearing via the value param in text_input
+    # 2) Removed manual assignment; input is cleared automatically via callback
 
-    # 3) Show a thinking spinner while the model computes
+    # 3) Show thinking spinner
     placeholder = st.empty()
     with st.spinner("🐔 ChikkaBot is thinking..."):
         answer_text = ask_qa_chain(qa_chain, q)
-
     placeholder.empty()
 
-    # 4) Add assistant reply to history
+    # 4) Add assistant reply
     st.session_state.history.insert(0, {"role": "ChikkaBot", "content": answer_text})
 
 # -------------------------
