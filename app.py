@@ -4,7 +4,7 @@ from langchain.chains import RetrievalQA
 from langchain_community.vectorstores import FAISS
 from langchain_huggingface import HuggingFaceEmbeddings
 from typing import List, Dict
-from langchain.prompts import PromptTemplate  # <-- added
+import datetime
 
 # -------------------------
 # UI / Appearance settings
@@ -29,6 +29,7 @@ st.markdown(
         margin: 8px 4px;
         width: 90%;
         line-height: 1.4;
+        position: relative;
     }
     .user {
         background: #dff7e3;
@@ -44,6 +45,13 @@ st.markdown(
         font-weight: 700;
         font-size: 12px;
         margin-bottom: 6px;
+    }
+    .timestamp {
+        font-size: 10px;
+        color: #888;
+        position: absolute;
+        bottom: 2px;
+        right: 8px;
     }
     </style>
     """,
@@ -89,30 +97,7 @@ def make_qa_chain(llm, vectorstore):
     from langchain.chains import RetrievalQA
 
     retriever = vectorstore.as_retriever()
-
-    # --- custom prompt to avoid "according to the context/text" ---
-    template = """
-    You are Chikka, an AI assistant that answers questions about broilers.
-    Use the provided information to give a clear, direct, and friendly answer.
-    Do not mention phrases like "according to the context" or "the text says".
-    Answer naturally, as if you know the information yourself.
-
-    Question: {question}
-    Context: {context}
-    Answer:
-    """
-    custom_prompt = PromptTemplate(
-        input_variables=["context", "question"],
-        template=template,
-    )
-    # --------------------------------------------------------------
-
-    qa_chain = RetrievalQA.from_chain_type(
-        llm=llm,
-        retriever=retriever,
-        return_source_documents=False,
-        chain_type_kwargs={"prompt": custom_prompt}
-    )
+    qa_chain = RetrievalQA.from_chain_type(llm=llm, retriever=retriever, return_source_documents=False)
     return qa_chain
 
 
@@ -171,7 +156,7 @@ if submitted and user_query and user_query.strip():
     q = user_query.strip()
 
     # 1) Add user message to history
-    st.session_state.history.insert(0, {"role": "User", "content": q})
+    st.session_state.history.insert(0, {"role": "User", "content": q, "time": datetime.datetime.now().strftime("%H:%M")})
 
     # 2) Show thinking spinner
     placeholder = st.empty()
@@ -180,7 +165,7 @@ if submitted and user_query and user_query.strip():
     placeholder.empty()
 
     # 3) Add assistant reply
-    st.session_state.history.insert(0, {"role": "ChikkaBot", "content": answer_text})
+    st.session_state.history.insert(0, {"role": "ChikkaBot", "content": answer_text, "time": datetime.datetime.now().strftime("%H:%M")})
 
 # -------------------------
 # Chat history display (newest at top)
@@ -196,12 +181,15 @@ with chat_box:
         for msg in st.session_state.history:
             role = msg.get("role", "User")
             content = msg.get("content", "")
+            timestamp = msg.get("time", "")
             css_class = "user" if role == "User" else "bot"
-            label = role if role == "User" else "ChikkaBot"
+            avatar = "👤" if role == "User" else "🐔"
+            label = f"{avatar} {role}"
             bubble = f"""
                 <div class="msg {css_class}">
                   <div class="role">{label}</div>
                   <div>{content}</div>
+                  <div class="timestamp">{timestamp}</div>
                 </div>
             """
             st.markdown(bubble, unsafe_allow_html=True)
