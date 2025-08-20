@@ -4,6 +4,7 @@ from langchain.chains import RetrievalQA
 from langchain_community.vectorstores import FAISS
 from langchain_huggingface import HuggingFaceEmbeddings
 from typing import List, Dict
+from langchain.prompts import PromptTemplate  # <-- added
 
 # -------------------------
 # UI / Appearance settings
@@ -88,7 +89,30 @@ def make_qa_chain(llm, vectorstore):
     from langchain.chains import RetrievalQA
 
     retriever = vectorstore.as_retriever()
-    qa_chain = RetrievalQA.from_chain_type(llm=llm, retriever=retriever, return_source_documents=False)
+
+    # --- custom prompt to avoid "according to the context/text" ---
+    template = """
+    You are Chikka, an AI assistant that answers questions about broilers.
+    Use the provided information to give a clear, direct, and friendly answer.
+    Do not mention phrases like "according to the context" or "the text says".
+    Answer naturally, as if you know the information yourself.
+
+    Question: {question}
+    Context: {context}
+    Answer:
+    """
+    custom_prompt = PromptTemplate(
+        input_variables=["context", "question"],
+        template=template,
+    )
+    # --------------------------------------------------------------
+
+    qa_chain = RetrievalQA.from_chain_type(
+        llm=llm,
+        retriever=retriever,
+        return_source_documents=False,
+        chain_type_kwargs={"prompt": custom_prompt}
+    )
     return qa_chain
 
 
