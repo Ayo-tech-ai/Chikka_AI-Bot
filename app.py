@@ -120,8 +120,12 @@ def ask_qa_chain(qa_chain, query: str) -> str:
 # -------------------------
 # App header & Input form
 # -------------------------
-st.title("🐔 Chikka AI Assistant")
-st.write("Ask me about broilers — I will respond using my knowledge base.")
+st.title("🐔 Chikka AI")
+st.write(
+    "👋 Hello, I’m **Chikka** — your virtual assistant for backyard broiler farming in Nigeria. "
+    "I provide expert-backed answers on broiler care, health, management, and more. "
+    "I’m here to support you with reliable guidance, anytime you need."
+)
 
 with st.form(key="query_form", clear_on_submit=True):  # Added clear_on_submit=True
     user_query = st.text_input(
