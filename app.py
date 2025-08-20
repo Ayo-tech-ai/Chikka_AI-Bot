@@ -94,27 +94,40 @@ def init_llm_from_groq(model_name: str = "llama-3.3-70b-versatile"):
 
 
 def make_qa_chain(llm, vectorstore):
-    from langchain.chains import RetrievalQA
-
     retriever = vectorstore.as_retriever()
     qa_chain = RetrievalQA.from_chain_type(llm=llm, retriever=retriever, return_source_documents=False)
     return qa_chain
 
 
 def ask_qa_chain(qa_chain, query: str) -> str:
+    """
+    Ask the QA chain. If nothing useful is returned,
+    fall back to a polite neutral Chikka AI message.
+    """
     try:
         out = qa_chain.invoke({"query": query})
         if isinstance(out, dict) and "result" in out:
-            return out["result"]
-        return str(out)
+            result = out["result"].strip()
+        else:
+            result = str(out).strip()
     except Exception:
         try:
             out = qa_chain({"query": query})
             if isinstance(out, dict):
-                return out.get("result", str(out))
-            return str(out)
+                result = out.get("result", str(out)).strip()
+            else:
+                result = str(out).strip()
         except Exception as e:
-            return f"Error while querying LLM: {e}"
+            result = f"Error while querying LLM: {e}"
+
+    # Neutral fallback if no meaningful answer
+    if not result or result.lower() in ["i don't know", ""]:
+        result = (
+            "That topic or question doesn’t seem to be covered in my knowledge. "
+            "I’m **Chikka AI**, here to help with questions related to backyard broilers."
+        )
+
+    return result
 
 
 # -------------------------
@@ -127,7 +140,7 @@ st.write(
     "I’m here to support you with reliable guidance, anytime you need."
 )
 
-with st.form(key="query_form", clear_on_submit=True):  # Added clear_on_submit=True
+with st.form(key="query_form", clear_on_submit=True):
     user_query = st.text_input(
         "Ask me about broilers:",
         key="query_input",
@@ -160,7 +173,10 @@ if submitted and user_query and user_query.strip():
     q = user_query.strip()
 
     # 1) Add user message to history
-    st.session_state.history.insert(0, {"role": "User", "content": q, "time": datetime.datetime.now().strftime("%H:%M")})
+    st.session_state.history.insert(
+        0,
+        {"role": "User", "content": q, "time": datetime.datetime.now().strftime("%H:%M")}
+    )
 
     # 2) Show thinking spinner
     placeholder = st.empty()
@@ -169,7 +185,10 @@ if submitted and user_query and user_query.strip():
     placeholder.empty()
 
     # 3) Add assistant reply
-    st.session_state.history.insert(0, {"role": "ChikkaBot", "content": answer_text, "time": datetime.datetime.now().strftime("%H:%M")})
+    st.session_state.history.insert(
+        0,
+        {"role": "ChikkaBot", "content": answer_text, "time": datetime.datetime.now().strftime("%H:%M")}
+    )
 
 # -------------------------
 # Chat history display (newest at top)
