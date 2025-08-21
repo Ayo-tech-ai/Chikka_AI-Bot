@@ -5,6 +5,7 @@ from langchain_community.vectorstores import FAISS
 from langchain_huggingface import HuggingFaceEmbeddings
 from typing import List, Dict
 import datetime
+import re
 
 # -------------------------
 # UI / Appearance settings
@@ -53,6 +54,20 @@ st.markdown(
         bottom: 2px;
         right: 8px;
     }
+    .suggestion-chip {
+        display: inline-block;
+        background-color: #f0f8ff;
+        border: 1px solid #d0e8ff;
+        border-radius: 16px;
+        padding: 4px 12px;
+        margin: 4px 4px 4px 0;
+        font-size: 14px;
+        cursor: pointer;
+        transition: background-color 0.2s;
+    }
+    .suggestion-chip:hover {
+        background-color: #e0f0ff;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -66,6 +81,9 @@ if "history" not in st.session_state:
 
 if "faiss_loaded" not in st.session_state:
     st.session_state.faiss_loaded = False
+
+if "conversation_context" not in st.session_state:
+    st.session_state.conversation_context = ""
 
 # -------------------------
 # Backend helpers (cached)
@@ -99,20 +117,83 @@ def make_qa_chain(llm, vectorstore):
     return qa_chain
 
 
-def ask_qa_chain(qa_chain, query: str) -> str:
+def extract_key_entities(text):
+    """Extract potential entities (diseases, topics) from text for context tracking"""
+    # Simple pattern matching for disease names and important terms
+    patterns = [
+        r'\b(Newcastle|Gumboro|Coccidiosis|Marek\'s|IBD|Avian Influenza|AI|CRD|Fowl Cholera|Fowl Pox)\b',
+        r'\b(broiler|chick|poultry|farm|feed|vaccine|ventilation|temperature|humidity)\b',
+        r'\b(symptom|treatment|prevention|cause|diagnosis|spread|transmission)\b'
+    ]
+    
+    entities = []
+    for pattern in patterns:
+        matches = re.findall(pattern, text, re.IGNORECASE)
+        entities.extend(matches)
+    
+    return list(set(entities))
+
+
+def generate_suggestions(last_query, last_response):
+    """Generate follow-up suggestions based on the last query and response"""
+    suggestions = []
+    
+    # Disease-related suggestions
+    if any(term in last_query.lower() for term in ['symptom', 'disease', 'newcastle', 'gumboro', 'coccidiosis']):
+        disease_match = re.search(r'\b(Newcastle|Gumboro|Coccidiosis|Marek\'s|IBD|Avian Influenza)\b', last_query, re.IGNORECASE)
+        if disease_match:
+            disease = disease_match.group(1)
+            suggestions = [
+                f"How is {disease} treated?",
+                f"How can I prevent {disease} in my flock?",
+                f"What are the causes of {disease}?",
+                f"How is {disease} diagnosed?"
+            ]
+        else:
+            suggestions = [
+                "What are common broiler diseases?",
+                "How to prevent disease outbreaks?",
+                "What are the symptoms of Newcastle disease?",
+                "How to treat Coccidiosis?"
+            ]
+    
+    # Management-related suggestions
+    elif any(term in last_query.lower() for term in ['feed', 'housing', 'management', 'care']):
+        suggestions = [
+            "What is the ideal broiler feeding program?",
+            "How to properly house broiler chickens?",
+            "What is the ideal temperature for broilers?",
+            "How to manage broiler waste?"
+        ]
+    
+    # General broiler farming suggestions
+    else:
+        suggestions = [
+            "What are the best practices for broiler farming?",
+            "How to maximize broiler growth rate?",
+            "What vaccines are essential for broilers?",
+            "How to manage broiler ventilation?"
+        ]
+    
+    return suggestions
+
+
+def ask_qa_chain(qa_chain, query: str, context: str = "") -> str:
     """
-    Ask the QA chain. If nothing useful is returned,
-    fall back to a polite neutral Chikka AI message.
+    Ask the QA chain with enhanced context handling and fallback responses.
     """
+    # Enhance query with conversation context
+    enhanced_query = f"{context} {query}" if context else query
+    
     try:
-        out = qa_chain.invoke({"query": query})
+        out = qa_chain.invoke({"query": enhanced_query})
         if isinstance(out, dict) and "result" in out:
             result = out["result"].strip()
         else:
             result = str(out).strip()
     except Exception:
         try:
-            out = qa_chain({"query": query})
+            out = qa_chain({"query": enhanced_query})
             if isinstance(out, dict):
                 result = out.get("result", str(out)).strip()
             else:
@@ -120,11 +201,18 @@ def ask_qa_chain(qa_chain, query: str) -> str:
         except Exception as e:
             result = f"Error while querying LLM: {e}"
 
-    # Neutral fallback if no meaningful answer
-    if not result or result.lower() in ["i don't know", ""]:
+    # Improved fallback response
+    no_knowledge_phrases = [
+        "i don't know", "i don't have information", "not in the context", 
+        "not provided in the context", "no information", "not covered"
+    ]
+    
+    if not result or any(phrase in result.lower() for phrase in no_knowledge_phrases):
         result = (
-            "That topic or question doesn’t seem to be covered in my knowledge. "
-            "I’m **Chikka AI**, here to help with questions related to backyard broilers."
+            "I don't have specific knowledge about that topic in my training. "
+            "As Chikka AI, I'm specialized in providing information about backyard broiler farming, "
+            "including health management, feeding practices, housing requirements, and disease prevention. "
+            "Feel free to ask me about any of these broiler-related topics!"
         )
 
     return result
@@ -135,10 +223,20 @@ def ask_qa_chain(qa_chain, query: str) -> str:
 # -------------------------
 st.title("🐔 Chikka AI")
 st.write(
-    "👋 Hello, I’m **Chikka** — your virtual assistant for backyard broiler farming in Nigeria. "
+    "👋 Hello, I'm **Chikka** — your virtual assistant for backyard broiler farming in Nigeria. "
     "I provide expert-backed answers on broiler care, health, management, and more. "
-    "I’m here to support you with reliable guidance, anytime you need."
+    "I'm here to support you with reliable guidance, anytime you need."
 )
+
+# Display suggestion chips if available
+if "suggestions" in st.session_state and st.session_state.suggestions:
+    st.markdown("**You might want to ask:**")
+    cols = st.columns(2)
+    for i, suggestion in enumerate(st.session_state.suggestions[:4]):
+        with cols[i % 2]:
+            if st.button(suggestion, key=f"sugg_{i}", use_container_width=True):
+                st.session_state.query_input = suggestion
+                st.session_state.auto_submit = True
 
 with st.form(key="query_form", clear_on_submit=True):
     user_query = st.text_input(
@@ -147,6 +245,11 @@ with st.form(key="query_form", clear_on_submit=True):
         placeholder="Type your question here..."
     )
     submitted = st.form_submit_button("Send")
+
+# Handle auto-submission from suggestions
+if "auto_submit" in st.session_state and st.session_state.auto_submit:
+    submitted = True
+    st.session_state.auto_submit = False
 
 # -------------------------
 # Load FAISS & LLM lazily (only once)
@@ -171,6 +274,15 @@ qa_chain = st.session_state._qa_chain
 # -------------------------
 if submitted and user_query and user_query.strip():
     q = user_query.strip()
+    
+    # Update conversation context with entities from previous messages
+    if st.session_state.history:
+        # Get the last few messages to maintain context
+        recent_messages = st.session_state.history[:3]  # Last 3 messages
+        context_text = " ".join([msg["content"] for msg in recent_messages if msg["role"] == "User"])
+        entities = extract_key_entities(context_text)
+        if entities:
+            st.session_state.conversation_context = f"Recent discussion mentioned: {', '.join(entities)}."
 
     # 1) Add user message to history
     st.session_state.history.insert(
@@ -181,7 +293,7 @@ if submitted and user_query and user_query.strip():
     # 2) Show thinking spinner
     placeholder = st.empty()
     with st.spinner("🐔 ChikkaBot is thinking..."):
-        answer_text = ask_qa_chain(qa_chain, q)
+        answer_text = ask_qa_chain(qa_chain, q, st.session_state.conversation_context)
     placeholder.empty()
 
     # 3) Add assistant reply
@@ -189,6 +301,9 @@ if submitted and user_query and user_query.strip():
         0,
         {"role": "ChikkaBot", "content": answer_text, "time": datetime.datetime.now().strftime("%H:%M")}
     )
+    
+    # 4) Generate follow-up suggestions
+    st.session_state.suggestions = generate_suggestions(q, answer_text)
 
 # -------------------------
 # Chat history display (newest at top)
@@ -227,4 +342,7 @@ st.caption("Note: Conversation is stored in-memory (session state). If you resta
 # Add a clear conversation button
 if st.button("Clear Conversation"):
     st.session_state.history = []
+    st.session_state.conversation_context = ""
+    if "suggestions" in st.session_state:
+        del st.session_state.suggestions
     st.rerun()
