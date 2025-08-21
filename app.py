@@ -68,6 +68,13 @@ st.markdown(
     .suggestion-chip:hover {
         background-color: #e0f0ff;
     }
+    .follow-up {
+        margin-top: 12px;
+        padding-top: 8px;
+        border-top: 1px dashed #e0e0e0;
+        font-style: italic;
+        color: #666;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -113,7 +120,31 @@ def init_llm_from_groq(model_name: str = "llama-3.3-70b-versatile"):
 
 def make_qa_chain(llm, vectorstore):
     retriever = vectorstore.as_retriever()
-    qa_chain = RetrievalQA.from_chain_type(llm=llm, retriever=retriever, return_source_documents=False)
+    
+    # Custom prompt to make responses more personalized
+    from langchain.prompts import PromptTemplate
+    prompt_template = """You are Chikka, an expert AI assistant specialized in backyard broiler farming. 
+    You provide friendly, personalized advice based on your extensive knowledge.
+
+    Context: {context}
+
+    Question: {question}
+
+    Answer as if you're sharing your own expertise. Avoid phrases like "based on the information provided" 
+    or "according to the context". Instead, present the information as your own knowledge.
+
+    Provide a helpful, personalized response:"""
+    
+    PROMPT = PromptTemplate(
+        template=prompt_template, input_variables=["context", "question"]
+    )
+    
+    qa_chain = RetrievalQA.from_chain_type(
+        llm=llm, 
+        retriever=retriever, 
+        return_source_documents=False,
+        chain_type_kwargs={"prompt": PROMPT}
+    )
     return qa_chain
 
 
@@ -166,6 +197,15 @@ def generate_suggestions(last_query, last_response):
             "How to manage broiler waste?"
         ]
     
+    # Breed-related suggestions
+    elif any(term in last_query.lower() for term in ['breed', 'type', 'variety', 'strain']):
+        suggestions = [
+            "Which breed is best for small-scale farming?",
+            "What are the advantages of Cobb breeds?",
+            "How do Ross breeds perform in hot climates?",
+            "What's the difference between Hubbard and other breeds?"
+        ]
+    
     # General broiler farming suggestions
     else:
         suggestions = [
@@ -176,6 +216,63 @@ def generate_suggestions(last_query, last_response):
         ]
     
     return suggestions
+
+
+def add_follow_up_prompt(response, query):
+    """Add a natural follow-up question based on the response content"""
+    follow_ups = {
+        'breed': "Would you like me to compare different breeds for your specific situation?",
+        'disease': "Would you like more details about preventing or treating this condition?",
+        'feed': "Should I provide more specific feeding recommendations for your flock?",
+        'housing': "Do you need advice on optimizing your housing setup?",
+        'management': "Would you like tips on implementing this in your operation?",
+        'default': "Is there anything else you'd like to know about this topic?"
+    }
+    
+    # Determine the most relevant follow-up
+    response_lower = response.lower()
+    query_lower = query.lower()
+    
+    if any(term in query_lower for term in ['breed', 'type', 'variety', 'strain']) or any(term in response_lower for term in ['breed', 'hubbard', 'cobb', 'ross']):
+        follow_up = follow_ups['breed']
+    elif any(term in query_lower for term in ['disease', 'symptom', 'treatment', 'vaccine']) or any(term in response_lower for term in ['disease', 'symptom', 'treatment', 'vaccine']):
+        follow_up = follow_ups['disease']
+    elif any(term in query_lower for term in ['feed', 'food', 'nutrition', 'diet']) or any(term in response_lower for term in ['feed', 'food', 'nutrition', 'diet']):
+        follow_up = follow_ups['feed']
+    elif any(term in query_lower for term in ['housing', 'shelter', 'coop', 'ventilation']) or any(term in response_lower for term in ['housing', 'shelter', 'coop', 'ventilation']):
+        follow_up = follow_ups['housing']
+    elif any(term in query_lower for term in ['manage', 'care', 'practice', 'operation']) or any(term in response_lower for term in ['manage', 'care', 'practice', 'operation']):
+        follow_up = follow_ups['management']
+    else:
+        follow_up = follow_ups['default']
+    
+    # Add the follow-up to the response
+    return response + f"\n\n*{follow_up}*"
+
+
+def personalize_response(response):
+    """Remove impersonal phrases and make the response more natural"""
+    impersonal_phrases = [
+        "based on the information provided",
+        "according to the context",
+        "the context mentions",
+        "based on the context",
+        "the information states",
+        "according to the information"
+    ]
+    
+    for phrase in impersonal_phrases:
+        response = re.sub(phrase, "based on my knowledge", response, flags=re.IGNORECASE)
+        response = re.sub(phrase, "I recommend", response, flags=re.IGNORECASE)
+        response = re.sub(phrase, "in my experience", response, flags=re.IGNORECASE)
+    
+    # Additional personalization
+    response = re.sub(r"is described as", "is known to be", response, flags=re.IGNORECASE)
+    response = re.sub(r"are described as", "are known to be", response, flags=re.IGNORECASE)
+    response = re.sub(r"this suggests that", "this means", response, flags=re.IGNORECASE)
+    response = re.sub(r"it is suggested that", "I've found that", response, flags=re.IGNORECASE)
+    
+    return response
 
 
 def ask_qa_chain(qa_chain, query: str, context: str = "") -> str:
@@ -201,6 +298,9 @@ def ask_qa_chain(qa_chain, query: str, context: str = "") -> str:
         except Exception as e:
             result = f"Error while querying LLM: {e}"
 
+    # Personalize the response
+    result = personalize_response(result)
+    
     # Improved fallback response
     no_knowledge_phrases = [
         "i don't know", "i don't have information", "not in the context", 
@@ -214,6 +314,9 @@ def ask_qa_chain(qa_chain, query: str, context: str = "") -> str:
             "including health management, feeding practices, housing requirements, and disease prevention. "
             "Feel free to ask me about any of these broiler-related topics!"
         )
+    else:
+        # Add a natural follow-up question
+        result = add_follow_up_prompt(result, query)
 
     return result
 
