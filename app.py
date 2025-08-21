@@ -74,6 +74,7 @@ st.markdown(
         border-top: 1px dashed #e0e0e0;
         font-style: italic;
         color: #666;
+        font-size: 0.9em;
     }
     </style>
     """,
@@ -121,19 +122,17 @@ def init_llm_from_groq(model_name: str = "llama-3.3-70b-versatile"):
 def make_qa_chain(llm, vectorstore):
     retriever = vectorstore.as_retriever()
     
-    # Custom prompt to make responses more personalized
+    # Custom prompt for concise, direct responses
     from langchain.prompts import PromptTemplate
     prompt_template = """You are Chikka, an expert AI assistant specialized in backyard broiler farming. 
-    You provide friendly, personalized advice based on your extensive knowledge.
+Provide clear, concise answers without unnecessary words. Get straight to the point.
 
-    Context: {context}
+Context: {context}
 
-    Question: {question}
+Question: {question}
 
-    Answer as if you're sharing your own expertise. Avoid phrases like "based on the information provided" 
-    or "according to the context". Instead, present the information as your own knowledge.
-
-    Provide a helpful, personalized response:"""
+Answer directly and concisely. Avoid introductory phrases and lengthy explanations.
+Focus on the key information needed to answer the question thoroughly but briefly."""
     
     PROMPT = PromptTemplate(
         template=prompt_template, input_variables=["context", "question"]
@@ -175,58 +174,58 @@ def generate_suggestions(last_query, last_response):
         if disease_match:
             disease = disease_match.group(1)
             suggestions = [
-                f"How is {disease} treated?",
-                f"How can I prevent {disease} in my flock?",
-                f"What are the causes of {disease}?",
-                f"How is {disease} diagnosed?"
+                f"{disease} treatment?",
+                f"Prevent {disease}?",
+                f"{disease} causes?",
+                f"Diagnose {disease}?"
             ]
         else:
             suggestions = [
-                "What are common broiler diseases?",
-                "How to prevent disease outbreaks?",
-                "What are the symptoms of Newcastle disease?",
-                "How to treat Coccidiosis?"
+                "Common broiler diseases?",
+                "Prevent disease outbreaks?",
+                "Newcastle symptoms?",
+                "Coccidiosis treatment?"
             ]
     
     # Management-related suggestions
     elif any(term in last_query.lower() for term in ['feed', 'housing', 'management', 'care']):
         suggestions = [
-            "What is the ideal broiler feeding program?",
-            "How to properly house broiler chickens?",
-            "What is the ideal temperature for broilers?",
-            "How to manage broiler waste?"
+            "Ideal feeding program?",
+            "Proper housing setup?",
+            "Ideal temperature?",
+            "Waste management?"
         ]
     
     # Breed-related suggestions
     elif any(term in last_query.lower() for term in ['breed', 'type', 'variety', 'strain']):
         suggestions = [
-            "Which breed is best for small-scale farming?",
-            "What are the advantages of Cobb breeds?",
-            "How do Ross breeds perform in hot climates?",
-            "What's the difference between Hubbard and other breeds?"
+            "Best small-scale breed?",
+            "Cobb breed advantages?",
+            "Ross in hot climates?",
+            "Hubbard differences?"
         ]
     
     # General broiler farming suggestions
     else:
         suggestions = [
-            "What are the best practices for broiler farming?",
-            "How to maximize broiler growth rate?",
-            "What vaccines are essential for broilers?",
-            "How to manage broiler ventilation?"
+            "Best farming practices?",
+            "Maximize growth rate?",
+            "Essential vaccines?",
+            "Ventilation management?"
         ]
     
     return suggestions
 
 
 def add_follow_up_prompt(response, query):
-    """Add a natural follow-up question based on the response content"""
+    """Add a concise follow-up question based on the response content"""
     follow_ups = {
-        'breed': "Would you like me to compare different breeds for your specific situation?",
-        'disease': "Would you like more details about preventing or treating this condition?",
-        'feed': "Should I provide more specific feeding recommendations for your flock?",
-        'housing': "Do you need advice on optimizing your housing setup?",
-        'management': "Would you like tips on implementing this in your operation?",
-        'default': "Is there anything else you'd like to know about this topic?"
+        'breed': "Compare different breeds?",
+        'disease': "More prevention details?",
+        'feed': "Specific feeding recommendations?",
+        'housing': "Optimize housing setup?",
+        'management': "Implementation tips?",
+        'default': "Anything else about this?"
     }
     
     # Determine the most relevant follow-up
@@ -247,30 +246,47 @@ def add_follow_up_prompt(response, query):
         follow_up = follow_ups['default']
     
     # Add the follow-up to the response
-    return response + f"\n\n*{follow_up}*"
+    return response + f"\n\n<div class='follow-up'>{follow_up}</div>"
 
 
-def personalize_response(response):
-    """Remove impersonal phrases and make the response more natural"""
+def simplify_response(response):
+    """Make responses more concise and direct"""
+    # Remove unnecessary phrases
     impersonal_phrases = [
         "based on the information provided",
         "according to the context",
         "the context mentions",
         "based on the context",
         "the information states",
-        "according to the information"
+        "according to the information",
+        "i would recommend",
+        "in my opinion"
     ]
     
     for phrase in impersonal_phrases:
-        response = re.sub(phrase, "based on my knowledge", response, flags=re.IGNORECASE)
-        response = re.sub(phrase, "I recommend", response, flags=re.IGNORECASE)
-        response = re.sub(phrase, "in my experience", response, flags=re.IGNORECASE)
+        response = re.sub(phrase, "", response, flags=re.IGNORECASE)
     
-    # Additional personalization
-    response = re.sub(r"is described as", "is known to be", response, flags=re.IGNORECASE)
-    response = re.sub(r"are described as", "are known to be", response, flags=re.IGNORECASE)
-    response = re.sub(r"this suggests that", "this means", response, flags=re.IGNORECASE)
-    response = re.sub(r"it is suggested that", "I've found that", response, flags=re.IGNORECASE)
+    # Simplify language
+    simplifications = {
+        r"is described as": "is",
+        r"are described as": "are",
+        r"this suggests that": "",
+        r"it is suggested that": "",
+        r"additionally,\s*": "",
+        r"furthermore,\s*": "",
+        r"moreover,\s*": ""
+    }
+    
+    for pattern, replacement in simplifications.items():
+        response = re.sub(pattern, replacement, response, flags=re.IGNORECASE)
+    
+    # Remove extra whitespace and make concise
+    response = re.sub(r"\s+", " ", response).strip()
+    response = re.sub(r"\.\s+", ". ", response)
+    
+    # Ensure it starts with a capital letter
+    if response and response[0].islower():
+        response = response[0].upper() + response[1:]
     
     return response
 
@@ -296,10 +312,10 @@ def ask_qa_chain(qa_chain, query: str, context: str = "") -> str:
             else:
                 result = str(out).strip()
         except Exception as e:
-            result = f"Error while querying LLM: {e}"
+            result = f"Error: {e}"
 
-    # Personalize the response
-    result = personalize_response(result)
+    # Simplify the response
+    result = simplify_response(result)
     
     # Improved fallback response
     no_knowledge_phrases = [
@@ -308,14 +324,9 @@ def ask_qa_chain(qa_chain, query: str, context: str = "") -> str:
     ]
     
     if not result or any(phrase in result.lower() for phrase in no_knowledge_phrases):
-        result = (
-            "I don't have specific knowledge about that topic in my training. "
-            "As Chikka AI, I'm specialized in providing information about backyard broiler farming, "
-            "including health management, feeding practices, housing requirements, and disease prevention. "
-            "Feel free to ask me about any of these broiler-related topics!"
-        )
+        result = "I specialize in backyard broiler farming topics like health, feeding, housing, and disease prevention. Ask me about these."
     else:
-        # Add a natural follow-up question
+        # Add a concise follow-up question
         result = add_follow_up_prompt(result, query)
 
     return result
@@ -326,14 +337,13 @@ def ask_qa_chain(qa_chain, query: str, context: str = "") -> str:
 # -------------------------
 st.title("🐔 Chikka AI")
 st.write(
-    "👋 Hello, I'm **Chikka** — your virtual assistant for backyard broiler farming in Nigeria. "
-    "I provide expert-backed answers on broiler care, health, management, and more. "
-    "I'm here to support you with reliable guidance, anytime you need."
+    "👋 I'm **Chikka** — your assistant for backyard broiler farming. "
+    "I provide concise answers on broiler care, health, and management."
 )
 
 # Display suggestion chips if available
 if "suggestions" in st.session_state and st.session_state.suggestions:
-    st.markdown("**You might want to ask:**")
+    st.markdown("**You might ask:**")
     cols = st.columns(2)
     for i, suggestion in enumerate(st.session_state.suggestions[:4]):
         with cols[i % 2]:
@@ -343,7 +353,7 @@ if "suggestions" in st.session_state and st.session_state.suggestions:
 
 with st.form(key="query_form", clear_on_submit=True):
     user_query = st.text_input(
-        "Ask me about broilers:",
+        "Ask about broilers:",
         key="query_input",
         placeholder="Type your question here..."
     )
@@ -360,7 +370,7 @@ if "auto_submit" in st.session_state and st.session_state.auto_submit:
 FAISS_PATH = "rag_assets/faiss_index"
 try:
     if not st.session_state.faiss_loaded:
-        with st.spinner("Loading knowledge base and model (one-time on startup)..."):
+        with st.spinner("Loading knowledge base..."):
             vectorstore = load_vectorstore(FAISS_PATH)
             llm = init_llm_from_groq()
             qa_chain = make_qa_chain(llm, vectorstore)
@@ -385,7 +395,7 @@ if submitted and user_query and user_query.strip():
         context_text = " ".join([msg["content"] for msg in recent_messages if msg["role"] == "User"])
         entities = extract_key_entities(context_text)
         if entities:
-            st.session_state.conversation_context = f"Recent discussion mentioned: {', '.join(entities)}."
+            st.session_state.conversation_context = f"Recent discussion: {', '.join(entities)}"
 
     # 1) Add user message to history
     st.session_state.history.insert(
@@ -395,7 +405,7 @@ if submitted and user_query and user_query.strip():
 
     # 2) Show thinking spinner
     placeholder = st.empty()
-    with st.spinner("🐔 ChikkaBot is thinking..."):
+    with st.spinner("Thinking..."):
         answer_text = ask_qa_chain(qa_chain, q, st.session_state.conversation_context)
     placeholder.empty()
 
@@ -417,7 +427,7 @@ chat_box = st.container()
 with chat_box:
     st.markdown('<div class="chat-container">', unsafe_allow_html=True)
     if not st.session_state.history:
-        st.markdown("<p style='color: #888'>No messages yet — ask a question above.</p>", unsafe_allow_html=True)
+        st.markdown("<p style='color: #888'>No messages yet. Ask a question above.</p>", unsafe_allow_html=True)
     else:
         for msg in st.session_state.history:
             role = msg.get("role", "User")
@@ -426,21 +436,21 @@ with chat_box:
             css_class = "user" if role == "User" else "bot"
             avatar = "👤" if role == "User" else "🐔"
             label = f"{avatar} {role}"
-            bubble = f"""
+            # Render HTML directly for proper formatting
+            st.markdown(f"""
                 <div class="msg {css_class}">
-                  <div class="role">{label}</div>
-                  <div>{content}</div>
-                  <div class="timestamp">{timestamp}</div>
+                    <div class="role">{label}</div>
+                    <div>{content}</div>
+                    <div class="timestamp">{timestamp}</div>
                 </div>
-            """
-            st.markdown(bubble, unsafe_allow_html=True)
+            """, unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
 # -------------------------
 # Footer / small note
 # -------------------------
 st.write("")
-st.caption("Note: Conversation is stored in-memory (session state). If you restart the app or session, history will be lost.")
+st.caption("Note: Conversation history is temporary and clears when you refresh.")
 
 # Add a clear conversation button
 if st.button("Clear Conversation"):
