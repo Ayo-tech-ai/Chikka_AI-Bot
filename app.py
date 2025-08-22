@@ -25,56 +25,61 @@ st.markdown(
         background: #fafafa;
     }
     .msg {
-        padding: 10px 12px;
-        border-radius: 10px;
-        margin: 8px 4px;
+        padding: 12px 16px;
+        border-radius: 12px;
+        margin: 10px 6px;
         width: 90%;
-        line-height: 1.4;
+        line-height: 1.5;
         position: relative;
     }
     .user {
-        background: #dff7e3;
+        background: #e8f5e9;
         margin-left: auto;
         text-align: left;
+        border: 1px solid #c8e6c9;
     }
     .bot {
         background: #ffffff;
         margin-right: auto;
         text-align: left;
+        border: 1px solid #e0e0e0;
     }
     .role {
-        font-weight: 700;
-        font-size: 12px;
+        font-weight: 600;
+        font-size: 13px;
         margin-bottom: 6px;
+        color: #555;
     }
     .timestamp {
-        font-size: 10px;
+        font-size: 11px;
         color: #888;
         position: absolute;
-        bottom: 2px;
-        right: 8px;
+        bottom: 4px;
+        right: 10px;
     }
     .suggestion-chip {
         display: inline-block;
-        background-color: #f0f8ff;
-        border: 1px solid #d0e8ff;
-        border-radius: 16px;
-        padding: 4px 12px;
-        margin: 4px 4px 4px 0;
+        background-color: #e3f2fd;
+        border: 1px solid #bbdefb;
+        border-radius: 18px;
+        padding: 6px 14px;
+        margin: 5px 5px 5px 0;
         font-size: 14px;
         cursor: pointer;
-        transition: background-color 0.2s;
+        transition: all 0.2s;
+        color: #1976d2;
     }
     .suggestion-chip:hover {
-        background-color: #e0f0ff;
+        background-color: #bbdefb;
+        transform: translateY(-1px);
     }
     .follow-up {
-        margin-top: 12px;
-        padding-top: 8px;
+        margin-top: 14px;
+        padding-top: 10px;
         border-top: 1px dashed #e0e0e0;
         font-style: italic;
         color: #666;
-        font-size: 0.9em;
+        font-size: 14px;
     }
     </style>
     """,
@@ -122,17 +127,17 @@ def init_llm_from_groq(model_name: str = "llama-3.3-70b-versatile"):
 def make_qa_chain(llm, vectorstore):
     retriever = vectorstore.as_retriever()
     
-    # Custom prompt for concise, direct responses
+    # Balanced prompt for natural but focused responses
     from langchain.prompts import PromptTemplate
-    prompt_template = """You are Chikka, an expert AI assistant specialized in backyard broiler farming. 
-Provide clear, concise answers without unnecessary words. Get straight to the point.
+    prompt_template = """You are Chikka, a friendly expert AI assistant specialized in backyard broiler farming. 
+Provide helpful, conversational answers that are clear and focused. Be naturally conversational but avoid unnecessary fluff.
 
 Context: {context}
 
 Question: {question}
 
-Answer directly and concisely. Avoid introductory phrases and lengthy explanations.
-Focus on the key information needed to answer the question thoroughly but briefly."""
+Answer in a friendly, expert tone. Share knowledge conversationally while staying on topic. 
+Avoid both robotic brevity and excessive wordiness."""
     
     PROMPT = PromptTemplate(
         template=prompt_template, input_variables=["context", "question"]
@@ -149,7 +154,6 @@ Focus on the key information needed to answer the question thoroughly but briefl
 
 def extract_key_entities(text):
     """Extract potential entities (diseases, topics) from text for context tracking"""
-    # Simple pattern matching for disease names and important terms
     patterns = [
         r'\b(Newcastle|Gumboro|Coccidiosis|Marek\'s|IBD|Avian Influenza|AI|CRD|Fowl Cholera|Fowl Pox)\b',
         r'\b(broiler|chick|poultry|farm|feed|vaccine|ventilation|temperature|humidity)\b',
@@ -165,7 +169,7 @@ def extract_key_entities(text):
 
 
 def generate_suggestions(last_query, last_response):
-    """Generate follow-up suggestions based on the last query and response"""
+    """Generate natural follow-up suggestions"""
     suggestions = []
     
     # Disease-related suggestions
@@ -174,61 +178,61 @@ def generate_suggestions(last_query, last_response):
         if disease_match:
             disease = disease_match.group(1)
             suggestions = [
-                f"{disease} treatment?",
-                f"Prevent {disease}?",
-                f"{disease} causes?",
-                f"Diagnose {disease}?"
+                f"How is {disease} treated?",
+                f"What prevents {disease}?",
+                f"What causes {disease}?",
+                f"How do I diagnose {disease}?"
             ]
         else:
             suggestions = [
-                "Common broiler diseases?",
-                "Prevent disease outbreaks?",
-                "Newcastle symptoms?",
-                "Coccidiosis treatment?"
+                "What are common broiler diseases?",
+                "How to prevent disease outbreaks?",
+                "What are Newcastle disease symptoms?",
+                "How is Coccidiosis treated?"
             ]
     
     # Management-related suggestions
     elif any(term in last_query.lower() for term in ['feed', 'housing', 'management', 'care']):
         suggestions = [
-            "Ideal feeding program?",
-            "Proper housing setup?",
-            "Ideal temperature?",
-            "Waste management?"
+            "What's the ideal feeding program?",
+            "How should I set up broiler housing?",
+            "What temperature is best for broilers?",
+            "How to manage broiler waste?"
         ]
     
     # Breed-related suggestions
     elif any(term in last_query.lower() for term in ['breed', 'type', 'variety', 'strain']):
         suggestions = [
-            "Best small-scale breed?",
-            "Cobb breed advantages?",
-            "Ross in hot climates?",
-            "Hubbard differences?"
+            "Which breed is best for small farms?",
+            "What are Cobb breed advantages?",
+            "How do Ross breeds handle heat?",
+            "How is Hubbard different from others?"
         ]
     
-    # General broiler farming suggestions
+    # General suggestions
     else:
         suggestions = [
-            "Best farming practices?",
-            "Maximize growth rate?",
-            "Essential vaccines?",
-            "Ventilation management?"
+            "What are best broiler farming practices?",
+            "How to maximize growth rate?",
+            "What vaccines are essential?",
+            "How to manage ventilation properly?"
         ]
     
     return suggestions
 
 
 def add_follow_up_prompt(response, query):
-    """Add a concise follow-up question based on the response content"""
+    """Add a natural follow-up question"""
     follow_ups = {
-        'breed': "Compare different breeds?",
-        'disease': "More prevention details?",
-        'feed': "Specific feeding recommendations?",
-        'housing': "Optimize housing setup?",
-        'management': "Implementation tips?",
-        'default': "Anything else about this?"
+        'breed': "Would you like me to compare different breeds for your situation?",
+        'disease': "Would you like more details about preventing or treating this?",
+        'feed': "Need specific feeding recommendations for your flock?",
+        'housing': "Want advice on optimizing your housing setup?",
+        'management': "Would implementation tips be helpful?",
+        'default': "Is there anything else you'd like to know about this?"
     }
     
-    # Determine the most relevant follow-up
+    # Determine relevant follow-up
     response_lower = response.lower()
     query_lower = query.lower()
     
@@ -245,90 +249,76 @@ def add_follow_up_prompt(response, query):
     else:
         follow_up = follow_ups['default']
     
-    # Add the follow-up to the response
     return response + f"\n\n<div class='follow-up'>{follow_up}</div>"
 
 
-def simplify_response(response):
-    """Make responses more concise and direct"""
-    # Remove unnecessary phrases
+def naturalize_response(response):
+    """Make responses sound more natural and conversational"""
+    # Remove impersonal phrases
     impersonal_phrases = [
         "based on the information provided",
         "according to the context",
-        "the context mentions",
-        "based on the context",
-        "the information states",
-        "according to the information",
-        "i would recommend",
-        "in my opinion"
+        "the context mentions that",
+        "based on the context provided",
+        "the information states that"
     ]
     
     for phrase in impersonal_phrases:
-        response = re.sub(phrase, "", response, flags=re.IGNORECASE)
+        response = re.sub(phrase, "from my experience", response, flags=re.IGNORECASE)
     
-    # Simplify language
-    simplifications = {
-        r"is described as": "is",
-        r"are described as": "are",
-        r"this suggests that": "",
-        r"it is suggested that": "",
-        r"additionally,\s*": "",
-        r"furthermore,\s*": "",
-        r"moreover,\s*": ""
+    # Make language more natural
+    naturalizations = {
+        r"is described as": "is known to be",
+        r"are described as": "are typically",
+        r"this suggests that": "this means",
+        r"it is suggested that": "I've found that",
+        r"additionally": "also",
+        r"furthermore": "plus",
+        r"moreover": "and"
     }
     
-    for pattern, replacement in simplifications.items():
+    for pattern, replacement in naturalizations.items():
         response = re.sub(pattern, replacement, response, flags=re.IGNORECASE)
     
-    # Remove extra whitespace and make concise
+    # Ensure conversational flow
     response = re.sub(r"\s+", " ", response).strip()
-    response = re.sub(r"\.\s+", ". ", response)
     
-    # Ensure it starts with a capital letter
-    if response and response[0].islower():
-        response = response[0].upper() + response[1:]
+    # Add occasional conversational markers for natural flow
+    if len(response.split()) > 30:  # Only for longer responses
+        response = re.sub(r"\. ([A-Z])", r". \1", response)
     
     return response
 
 
 def ask_qa_chain(qa_chain, query: str, context: str = "") -> str:
-    """
-    Ask the QA chain with enhanced context handling and fallback responses.
-    """
-    # Enhance query with conversation context
+    """Get balanced, natural responses from the QA chain"""
     enhanced_query = f"{context} {query}" if context else query
     
     try:
         out = qa_chain.invoke({"query": enhanced_query})
-        if isinstance(out, dict) and "result" in out:
-            result = out["result"].strip()
-        else:
-            result = str(out).strip()
+        result = out["result"].strip() if isinstance(out, dict) and "result" in out else str(out).strip()
     except Exception:
         try:
             out = qa_chain({"query": enhanced_query})
-            if isinstance(out, dict):
-                result = out.get("result", str(out)).strip()
-            else:
-                result = str(out).strip()
+            result = out.get("result", str(out)).strip() if isinstance(out, dict) else str(out).strip()
         except Exception as e:
-            result = f"Error: {e}"
-
-    # Simplify the response
-    result = simplify_response(result)
+            result = f"I encountered an error: {str(e)}"
     
-    # Improved fallback response
+    # Naturalize the response
+    result = naturalize_response(result)
+    
+    # Handle cases where knowledge is limited
     no_knowledge_phrases = [
         "i don't know", "i don't have information", "not in the context", 
         "not provided in the context", "no information", "not covered"
     ]
     
     if not result or any(phrase in result.lower() for phrase in no_knowledge_phrases):
-        result = "I specialize in backyard broiler farming topics like health, feeding, housing, and disease prevention. Ask me about these."
+        result = "I specialize in backyard broiler farming topics like health management, feeding practices, housing setup, and disease prevention. Feel free to ask me about any of these areas!"
     else:
-        # Add a concise follow-up question
+        # Add natural follow-up question
         result = add_follow_up_prompt(result, query)
-
+    
     return result
 
 
@@ -337,13 +327,13 @@ def ask_qa_chain(qa_chain, query: str, context: str = "") -> str:
 # -------------------------
 st.title("🐔 Chikka AI")
 st.write(
-    "👋 I'm **Chikka** — your assistant for backyard broiler farming. "
-    "I provide concise answers on broiler care, health, and management."
+    "👋 Hello! I'm **Chikka**, your friendly assistant for backyard broiler farming. "
+    "I'm here to help with practical advice on broiler care, health, and management."
 )
 
 # Display suggestion chips if available
 if "suggestions" in st.session_state and st.session_state.suggestions:
-    st.markdown("**You might ask:**")
+    st.markdown("**You might want to ask:**")
     cols = st.columns(2)
     for i, suggestion in enumerate(st.session_state.suggestions[:4]):
         with cols[i % 2]:
@@ -353,9 +343,9 @@ if "suggestions" in st.session_state and st.session_state.suggestions:
 
 with st.form(key="query_form", clear_on_submit=True):
     user_query = st.text_input(
-        "Ask about broilers:",
+        "Ask me about broilers:",
         key="query_input",
-        placeholder="Type your question here..."
+        placeholder="What would you like to know about broiler farming?"
     )
     submitted = st.form_submit_button("Send")
 
@@ -370,14 +360,14 @@ if "auto_submit" in st.session_state and st.session_state.auto_submit:
 FAISS_PATH = "rag_assets/faiss_index"
 try:
     if not st.session_state.faiss_loaded:
-        with st.spinner("Loading knowledge base..."):
+        with st.spinner("Getting things ready for you..."):
             vectorstore = load_vectorstore(FAISS_PATH)
             llm = init_llm_from_groq()
             qa_chain = make_qa_chain(llm, vectorstore)
             st.session_state.faiss_loaded = True
             st.session_state._qa_chain = qa_chain
 except Exception as e:
-    st.error(f"Initialization error: {e}")
+    st.error(f"Sorry, I'm having trouble loading my knowledge base: {e}")
     st.stop()
 
 qa_chain = st.session_state._qa_chain
@@ -388,38 +378,37 @@ qa_chain = st.session_state._qa_chain
 if submitted and user_query and user_query.strip():
     q = user_query.strip()
     
-    # Update conversation context with entities from previous messages
+    # Maintain conversation context
     if st.session_state.history:
-        # Get the last few messages to maintain context
-        recent_messages = st.session_state.history[:3]  # Last 3 messages
+        recent_messages = st.session_state.history[:3]
         context_text = " ".join([msg["content"] for msg in recent_messages if msg["role"] == "User"])
         entities = extract_key_entities(context_text)
         if entities:
-            st.session_state.conversation_context = f"Recent discussion: {', '.join(entities)}"
+            st.session_state.conversation_context = f"We've been discussing: {', '.join(entities)}"
 
-    # 1) Add user message to history
+    # Add user message to history
     st.session_state.history.insert(
         0,
         {"role": "User", "content": q, "time": datetime.datetime.now().strftime("%H:%M")}
     )
 
-    # 2) Show thinking spinner
+    # Get response
     placeholder = st.empty()
-    with st.spinner("Thinking..."):
+    with st.spinner("Thinking about your question..."):
         answer_text = ask_qa_chain(qa_chain, q, st.session_state.conversation_context)
     placeholder.empty()
 
-    # 3) Add assistant reply
+    # Add assistant reply
     st.session_state.history.insert(
         0,
         {"role": "ChikkaBot", "content": answer_text, "time": datetime.datetime.now().strftime("%H:%M")}
     )
     
-    # 4) Generate follow-up suggestions
+    # Generate follow-up suggestions
     st.session_state.suggestions = generate_suggestions(q, answer_text)
 
 # -------------------------
-# Chat history display (newest at top)
+# Chat history display
 # -------------------------
 st.markdown("### Conversation")
 chat_box = st.container()
@@ -427,7 +416,7 @@ chat_box = st.container()
 with chat_box:
     st.markdown('<div class="chat-container">', unsafe_allow_html=True)
     if not st.session_state.history:
-        st.markdown("<p style='color: #888'>No messages yet. Ask a question above.</p>", unsafe_allow_html=True)
+        st.markdown("<p style='color: #888; text-align: center;'>No messages yet. Ask me anything about broiler farming!</p>", unsafe_allow_html=True)
     else:
         for msg in st.session_state.history:
             role = msg.get("role", "User")
@@ -436,7 +425,7 @@ with chat_box:
             css_class = "user" if role == "User" else "bot"
             avatar = "👤" if role == "User" else "🐔"
             label = f"{avatar} {role}"
-            # Render HTML directly for proper formatting
+            
             st.markdown(f"""
                 <div class="msg {css_class}">
                     <div class="role">{label}</div>
@@ -447,13 +436,13 @@ with chat_box:
     st.markdown("</div>", unsafe_allow_html=True)
 
 # -------------------------
-# Footer / small note
+# Footer
 # -------------------------
 st.write("")
-st.caption("Note: Conversation history is temporary and clears when you refresh.")
+st.caption("💡 Conversation history is temporary and will clear when you refresh the page.")
 
 # Add a clear conversation button
-if st.button("Clear Conversation"):
+if st.button("🧹 Clear Conversation"):
     st.session_state.history = []
     st.session_state.conversation_context = ""
     if "suggestions" in st.session_state:
