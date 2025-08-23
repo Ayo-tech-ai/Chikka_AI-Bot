@@ -127,17 +127,20 @@ def init_llm_from_groq(model_name: str = "llama-3.3-70b-versatile"):
 def make_qa_chain(llm, vectorstore):
     retriever = vectorstore.as_retriever()
     
-    # Balanced prompt for natural but focused responses
+    # Enhanced prompt for natural follow-up questions
     from langchain.prompts import PromptTemplate
     prompt_template = """You are Chikka, a friendly expert AI assistant specialized in backyard broiler farming. 
 Provide helpful, conversational answers that are clear and focused. Be naturally conversational but avoid unnecessary fluff.
+
+After providing your main answer, end with a natural follow-up question that continues the conversation. 
+Make the follow-up relevant to the topic and helpful for the farmer.
 
 Context: {context}
 
 Question: {question}
 
 Answer in a friendly, expert tone. Share knowledge conversationally while staying on topic. 
-Avoid both robotic brevity and excessive wordiness."""
+End with a helpful follow-up question to continue the conversation."""
     
     PROMPT = PromptTemplate(
         template=prompt_template, input_variables=["context", "question"]
@@ -221,24 +224,29 @@ def generate_suggestions(last_query, last_response):
     return suggestions
 
 
-def add_follow_up_prompt(response, query):
-    """Add a natural follow-up question"""
-    follow_ups = {
-        'breed': "Would you like me to compare different breeds for your situation?",
-        'disease': "Would you like more details about preventing or treating this?",
-        'feed': "Need specific feeding recommendations for your flock?",
-        'housing': "Want advice on optimizing your housing setup?",
-        'management': "Would implementation tips be helpful?",
-        'default': "Is there anything else you'd like to know about this?"
-    }
+def ensure_follow_up_question(response, query):
+    """Ensure the response ends with a natural follow-up question"""
+    # Check if the response already ends with a question
+    if response.strip().endswith('?'):
+        return response
     
-    # Determine relevant follow-up
+    # If not, add an appropriate follow-up based on context
     response_lower = response.lower()
     query_lower = query.lower()
     
+    follow_ups = {
+        'breed': "Are you considering a particular breed for your farm?",
+        'disease': "Are you currently dealing with sick birds in your flock?",
+        'feed': "What type of feeding system are you using currently?",
+        'housing': "How is your current housing setup arranged?",
+        'management': "How many birds are you managing right now?",
+        'general': "Is there anything else you'd like to know about this?"
+    }
+    
+    # Determine the most relevant follow-up
     if any(term in query_lower for term in ['breed', 'type', 'variety', 'strain']) or any(term in response_lower for term in ['breed', 'hubbard', 'cobb', 'ross']):
         follow_up = follow_ups['breed']
-    elif any(term in query_lower for term in ['disease', 'symptom', 'treatment', 'vaccine']) or any(term in response_lower for term in ['disease', 'symptom', 'treatment', 'vaccine']):
+    elif any(term in query_lower for term in ['disease', 'symptom', 'treatment', 'vaccine', 'sick', 'ill']) or any(term in response_lower for term in ['disease', 'symptom', 'treatment', 'vaccine', 'sick', 'ill']):
         follow_up = follow_ups['disease']
     elif any(term in query_lower for term in ['feed', 'food', 'nutrition', 'diet']) or any(term in response_lower for term in ['feed', 'food', 'nutrition', 'diet']):
         follow_up = follow_ups['feed']
@@ -247,7 +255,7 @@ def add_follow_up_prompt(response, query):
     elif any(term in query_lower for term in ['manage', 'care', 'practice', 'operation']) or any(term in response_lower for term in ['manage', 'care', 'practice', 'operation']):
         follow_up = follow_ups['management']
     else:
-        follow_up = follow_ups['default']
+        follow_up = follow_ups['general']
     
     return response + f"\n\n<div class='follow-up'>{follow_up}</div>"
 
@@ -283,10 +291,6 @@ def naturalize_response(response):
     # Ensure conversational flow
     response = re.sub(r"\s+", " ", response).strip()
     
-    # Add occasional conversational markers for natural flow
-    if len(response.split()) > 30:  # Only for longer responses
-        response = re.sub(r"\. ([A-Z])", r". \1", response)
-    
     return response
 
 
@@ -315,9 +319,10 @@ def ask_qa_chain(qa_chain, query: str, context: str = "") -> str:
     
     if not result or any(phrase in result.lower() for phrase in no_knowledge_phrases):
         result = "I specialize in backyard broiler farming topics like health management, feeding practices, housing setup, and disease prevention. Feel free to ask me about any of these areas!"
+        result = ensure_follow_up_question(result, query)
     else:
-        # Add natural follow-up question
-        result = add_follow_up_prompt(result, query)
+        # Ensure there's a natural follow-up question
+        result = ensure_follow_up_question(result, query)
     
     return result
 
