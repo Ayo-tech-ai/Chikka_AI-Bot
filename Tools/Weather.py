@@ -1,56 +1,44 @@
-# tools/weather.py
-import os
 import requests
-from typing import Optional
+import streamlit as st
 
-def _get_api_key() -> Optional[str]:
-    # 1) environment variable
-    key = os.environ.get("OPENWEATHER_API_KEY") or os.environ.get("WEATHER_API_KEY")
-    if key:
-        return key
-    # 2) streamlit secrets (if running inside Streamlit)
-    try:
-        import streamlit as st
-        return st.secrets.get("OPENWEATHER_API_KEY") or st.secrets.get("WEATHER_API_KEY")
-    except Exception:
-        return None
+# Get API key securely from Streamlit secrets
+OPENWEATHER_API_KEY = st.secrets["OPENWEATHER_API_KEY"]
 
-def get_weather(location: str, api_key: Optional[str] = None) -> str:
+def get_weather(city: str, country_code: str = None) -> str:
     """
-    Fetch current weather for `location` using OpenWeatherMap.
-    - location: e.g. "Lagos" or "Lagos, NG"
-    - api_key: optional override (otherwise looks in env / streamlit secrets)
-    Returns: readable string or helpful error message.
+    Fetch current weather data for a given city (and optional country code).
+    Returns a simple string summary.
+    
+    Example:
+        get_weather("Lagos", "NG")
     """
-    if not location or not location.strip():
-        return "Please provide a location (e.g. 'weather in Lagos')."
-
-    api_key = api_key or _get_api_key()
-    if not api_key:
-        return (
-            "Weather API key not found. "
-            "Set OPENWEATHER_API_KEY in environment variables or add it to Streamlit secrets."
-        )
-
     try:
-        url = "https://api.openweathermap.org/data/2.5/weather"
-        params = {"q": location, "appid": api_key, "units": "metric"}
-        resp = requests.get(url, params=params, timeout=10)
-        resp.raise_for_status()
-        data = resp.json()
+        # Build query (with or without country code)
+        if country_code:
+            query = f"{city},{country_code}"
+        else:
+            query = city
 
-        weather_desc = data["weather"][0]["description"].capitalize()
+        url = f"http://api.openweathermap.org/data/2.5/weather?q={query}&appid={OPENWEATHER_API_KEY}&units=metric"
+
+        response = requests.get(url)
+        data = response.json()
+
+        if response.status_code != 200:
+            return f"⚠️ Could not fetch weather for {city}. Error: {data.get('message', 'Unknown error')}"
+
+        # Extract useful details
+        weather_main = data["weather"][0]["description"].capitalize()
         temp = data["main"]["temp"]
-        feels = data["main"].get("feels_like")
-        humidity = data["main"].get("humidity")
-        wind = data.get("wind", {}).get("speed")
+        feels_like = data["main"]["feels_like"]
+        humidity = data["main"]["humidity"]
 
         return (
-            f"{location.title()}: {weather_desc}. "
-            f"Temp {temp:.1f}°C (feels like {feels:.1f}°C). "
-            f"Humidity {humidity}% · Wind {wind} m/s."
+            f"🌤 Weather in {city}:\n"
+            f"- Condition: {weather_main}\n"
+            f"- Temperature: {temp}°C (feels like {feels_like}°C)\n"
+            f"- Humidity: {humidity}%"
         )
-    except requests.HTTPError as e:
-        return f"Unable to fetch weather for '{location}': {e}"
+
     except Exception as e:
-        return f"Error fetching weather: {e}"
+        return f"⚠️ An error occurred: {str(e)}"
