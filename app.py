@@ -453,3 +453,18 @@ if st.button("🧹 Clear Conversation"):
     if "suggestions" in st.session_state:
         del st.session_state.suggestions
     st.rerun()
+
+
+
+
+
+from tools.weather import get_weather
+
+st.title("🌦 Weather Test Tool")
+
+city = st.text_input("Enter a city:", "Lagos")
+country = st.text_input("Enter country code (optional):", "NG")
+
+if st.button("Get Weather"):
+    weather_info = get_weather(city, country)
+    st.write(weather_info)
