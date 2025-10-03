@@ -156,8 +156,8 @@ End with a helpful follow-up question to continue the conversation."""
 # -------------------------
 # Weather + Feed Tool Setup
 # -------------------------
-from tools.weather import get_weather
-from tools.feed import calculate_feed_cost
+from tools/weather import get_weather
+from tools/calculator.py import calculate_feed_cost
 
 
 def extract_city(query: str) -> str:
