@@ -127,7 +127,6 @@ def init_llm_from_groq(model_name: str = "llama-3.3-70b-versatile"):
 def make_qa_chain(llm, vectorstore):
     retriever = vectorstore.as_retriever()
     
-    # Enhanced prompt for natural follow-up questions
     from langchain.prompts import PromptTemplate
     prompt_template = """You are Chikka, a friendly expert AI assistant specialized in backyard broiler farming. 
 Provide helpful, conversational answers that are clear and focused. Be naturally conversational but avoid unnecessary fluff.
@@ -156,7 +155,6 @@ End with a helpful follow-up question to continue the conversation."""
 
 
 def extract_key_entities(text):
-    """Extract potential entities (diseases, topics) from text for context tracking"""
     patterns = [
         r'\b(Newcastle|Gumboro|Coccidiosis|Marek\'s|IBD|Avian Influenza|AI|CRD|Fowl Cholera|Fowl Pox)\b',
         r'\b(broiler|chick|poultry|farm|feed|vaccine|ventilation|temperature|humidity)\b',
@@ -172,10 +170,7 @@ def extract_key_entities(text):
 
 
 def generate_suggestions(last_query, last_response):
-    """Generate natural follow-up suggestions"""
     suggestions = []
-    
-    # Disease-related suggestions
     if any(term in last_query.lower() for term in ['symptom', 'disease', 'newcastle', 'gumboro', 'coccidiosis']):
         disease_match = re.search(r'\b(Newcastle|Gumboro|Coccidiosis|Marek\'s|IBD|Avian Influenza)\b', last_query, re.IGNORECASE)
         if disease_match:
@@ -193,8 +188,6 @@ def generate_suggestions(last_query, last_response):
                 "What are Newcastle disease symptoms?",
                 "How is Coccidiosis treated?"
             ]
-    
-    # Management-related suggestions
     elif any(term in last_query.lower() for term in ['feed', 'housing', 'management', 'care']):
         suggestions = [
             "What's the ideal feeding program?",
@@ -202,8 +195,6 @@ def generate_suggestions(last_query, last_response):
             "What temperature is best for broilers?",
             "How to manage broiler waste?"
         ]
-    
-    # Breed-related suggestions
     elif any(term in last_query.lower() for term in ['breed', 'type', 'variety', 'strain']):
         suggestions = [
             "Which breed is best for small farms?",
@@ -211,8 +202,6 @@ def generate_suggestions(last_query, last_response):
             "How do Ross breeds handle heat?",
             "How is Hubbard different from others?"
         ]
-    
-    # General suggestions
     else:
         suggestions = [
             "What are best broiler farming practices?",
@@ -225,12 +214,9 @@ def generate_suggestions(last_query, last_response):
 
 
 def ensure_follow_up_question(response, query):
-    """Ensure the response ends with a natural follow-up question"""
-    # Check if the response already ends with a question
     if response.strip().endswith('?'):
         return response
     
-    # If not, add an appropriate follow-up based on context
     response_lower = response.lower()
     query_lower = query.lower()
     
@@ -243,7 +229,6 @@ def ensure_follow_up_question(response, query):
         'general': "Is there anything else you'd like to know about this?"
     }
     
-    # Determine the most relevant follow-up
     if any(term in query_lower for term in ['breed', 'type', 'variety', 'strain']) or any(term in response_lower for term in ['breed', 'hubbard', 'cobb', 'ross']):
         follow_up = follow_ups['breed']
     elif any(term in query_lower for term in ['disease', 'symptom', 'treatment', 'vaccine', 'sick', 'ill']) or any(term in response_lower for term in ['disease', 'symptom', 'treatment', 'vaccine', 'sick', 'ill']):
@@ -261,8 +246,6 @@ def ensure_follow_up_question(response, query):
 
 
 def naturalize_response(response):
-    """Make responses sound more natural and conversational"""
-    # Remove impersonal phrases
     impersonal_phrases = [
         "based on the information provided",
         "according to the context",
@@ -270,11 +253,9 @@ def naturalize_response(response):
         "based on the context provided",
         "the information states that"
     ]
-    
     for phrase in impersonal_phrases:
         response = re.sub(phrase, "from my experience", response, flags=re.IGNORECASE)
     
-    # Make language more natural
     naturalizations = {
         r"is described as": "is known to be",
         r"are described as": "are typically",
@@ -284,18 +265,14 @@ def naturalize_response(response):
         r"furthermore": "plus",
         r"moreover": "and"
     }
-    
     for pattern, replacement in naturalizations.items():
         response = re.sub(pattern, replacement, response, flags=re.IGNORECASE)
     
-    # Ensure conversational flow
     response = re.sub(r"\s+", " ", response).strip()
-    
     return response
 
 
 def ask_qa_chain(qa_chain, query: str, context: str = "") -> str:
-    """Get balanced, natural responses from the QA chain"""
     enhanced_query = f"{context} {query}" if context else query
     
     try:
@@ -308,20 +285,16 @@ def ask_qa_chain(qa_chain, query: str, context: str = "") -> str:
         except Exception as e:
             result = f"I encountered an error: {str(e)}"
     
-    # Naturalize the response
     result = naturalize_response(result)
     
-    # Handle cases where knowledge is limited
     no_knowledge_phrases = [
         "i don't know", "i don't have information", "not in the context", 
         "not provided in the context", "no information", "not covered"
     ]
-    
     if not result or any(phrase in result.lower() for phrase in no_knowledge_phrases):
         result = "I specialize in backyard broiler farming topics like health management, feeding practices, housing setup, and disease prevention. Feel free to ask me about any of these areas!"
         result = ensure_follow_up_question(result, query)
     else:
-        # Ensure there's a natural follow-up question
         result = ensure_follow_up_question(result, query)
     
     return result
@@ -336,7 +309,6 @@ st.write(
     "I'm here to help with practical advice on broiler care, health, and management."
 )
 
-# Display suggestion chips if available
 if "suggestions" in st.session_state and st.session_state.suggestions:
     st.markdown("**You might want to ask:**")
     cols = st.columns(2)
@@ -354,7 +326,6 @@ with st.form(key="query_form", clear_on_submit=True):
     )
     submitted = st.form_submit_button("Send")
 
-# Handle auto-submission from suggestions
 if "auto_submit" in st.session_state and st.session_state.auto_submit:
     submitted = True
     st.session_state.auto_submit = False
@@ -378,12 +349,29 @@ except Exception as e:
 qa_chain = st.session_state._qa_chain
 
 # -------------------------
+# Weather Integration
+# -------------------------
+from tools.weather import get_weather
+
+def extract_city(query: str) -> str:
+    match = re.search(r"in\s+([A-Za-z\s]+)", query, re.IGNORECASE)
+    if match:
+        return match.group(1).strip()
+    return "Lagos"  # fallback default
+
+def handle_query(query: str, qa_chain, context: str = ""):
+    q_lower = query.lower()
+    if "weather" in q_lower or "rain" in q_lower or "temperature" in q_lower:
+        city = extract_city(query)
+        return get_weather(city, "NG")
+    return ask_qa_chain(qa_chain, query, context)
+
+# -------------------------
 # Handle a new submission
 # -------------------------
 if submitted and user_query and user_query.strip():
     q = user_query.strip()
     
-    # Maintain conversation context
     if st.session_state.history:
         recent_messages = st.session_state.history[:3]
         context_text = " ".join([msg["content"] for msg in recent_messages if msg["role"] == "User"])
@@ -391,25 +379,21 @@ if submitted and user_query and user_query.strip():
         if entities:
             st.session_state.conversation_context = f"We've been discussing: {', '.join(entities)}"
 
-    # Add user message to history
     st.session_state.history.insert(
         0,
         {"role": "User", "content": q, "time": datetime.datetime.now().strftime("%H:%M")}
     )
 
-    # Get response
     placeholder = st.empty()
     with st.spinner("Thinking about your question..."):
-        answer_text = ask_qa_chain(qa_chain, q, st.session_state.conversation_context)
+        answer_text = handle_query(q, qa_chain, st.session_state.conversation_context)
     placeholder.empty()
 
-    # Add assistant reply
     st.session_state.history.insert(
         0,
         {"role": "ChikkaBot", "content": answer_text, "time": datetime.datetime.now().strftime("%H:%M")}
     )
     
-    # Generate follow-up suggestions
     st.session_state.suggestions = generate_suggestions(q, answer_text)
 
 # -------------------------
@@ -446,25 +430,9 @@ with chat_box:
 st.write("")
 st.caption("💡 Conversation history is temporary and will clear when you refresh the page.")
 
-# Add a clear conversation button
 if st.button("🧹 Clear Conversation"):
     st.session_state.history = []
     st.session_state.conversation_context = ""
     if "suggestions" in st.session_state:
         del st.session_state.suggestions
     st.rerun()
-
-
-
-
-
-from tools.weather import get_weather
-
-st.title("🌦 Weather Test Tool")
-
-city = st.text_input("Enter a city:", "Lagos")
-country = st.text_input("Enter country code (optional):", "NG")
-
-if st.button("Get Weather"):
-    weather_info = get_weather(city, country)
-    st.write(weather_info)
