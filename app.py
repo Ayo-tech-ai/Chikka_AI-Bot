@@ -12,7 +12,6 @@ import re
 # -------------------------
 st.set_page_config(page_title="Chikka AI Assistant", layout="centered")
 
-# Simple CSS for chat bubbles + scroll area
 st.markdown(
     """
     <style>
@@ -107,22 +106,17 @@ def load_vectorstore(faiss_path: str):
     db = FAISS.load_local(faiss_path, embeddings, allow_dangerous_deserialization=True)
     return db
 
-
 @st.cache_resource(show_spinner=False)
 def init_llm_from_groq(model_name: str = "llama-3.3-70b-versatile"):
     try:
         groq_key = st.secrets["GROQ_API_KEY"]
     except Exception:
         raise RuntimeError("GROQ_API_KEY not found in Streamlit secrets. Add it before running the app.")
-
-    llm = ChatGroq(groq_api_key=groq_key, model=model_name)
-    return llm
-
+    return ChatGroq(groq_api_key=groq_key, model=model_name)
 
 def make_qa_chain(llm, vectorstore):
-    retriever = vectorstore.as_retriever()
-    
     from langchain.prompts import PromptTemplate
+    retriever = vectorstore.as_retriever()
     prompt_template = """You are Chikka, a friendly expert AI assistant specialized in backyard broiler farming. 
 Provide helpful, conversational answers that are clear and focused. Be naturally conversational but avoid unnecessary fluff.
 
@@ -135,34 +129,26 @@ Question: {question}
 
 Answer in a friendly, expert tone. Share knowledge conversationally while staying on topic. 
 End with a helpful follow-up question to continue the conversation."""
-    
-    PROMPT = PromptTemplate(
-        template=prompt_template, input_variables=["context", "question"]
-    )
-    
-    qa_chain = RetrievalQA.from_chain_type(
-        llm=llm, 
-        retriever=retriever, 
-        return_source_documents=False,
+    PROMPT = PromptTemplate(template=prompt_template, input_variables=["context", "question"])
+    return RetrievalQA.from_chain_type(
+        llm=llm, retriever=retriever, return_source_documents=False,
         chain_type_kwargs={"prompt": PROMPT}
     )
-    return qa_chain
 
-
+# -------------------------
+# Entity extraction + Suggestions + Naturalization
+# -------------------------
 def extract_key_entities(text):
     patterns = [
         r'\b(Newcastle|Gumboro|Coccidiosis|Marek\'s|IBD|Avian Influenza|AI|CRD|Fowl Cholera|Fowl Pox)\b',
         r'\b(broiler|chick|poultry|farm|feed|vaccine|ventilation|temperature|humidity)\b',
         r'\b(symptom|treatment|prevention|cause|diagnosis|spread|transmission)\b'
     ]
-    
     entities = []
     for pattern in patterns:
         matches = re.findall(pattern, text, re.IGNORECASE)
         entities.extend(matches)
-    
     return list(set(entities))
-
 
 def generate_suggestions(last_query, last_response):
     suggestions = []
@@ -170,51 +156,20 @@ def generate_suggestions(last_query, last_response):
         disease_match = re.search(r'\b(Newcastle|Gumboro|Coccidiosis|Marek\'s|IBD|Avian Influenza)\b', last_query, re.IGNORECASE)
         if disease_match:
             disease = disease_match.group(1)
-            suggestions = [
-                f"How is {disease} treated?",
-                f"What prevents {disease}?",
-                f"What causes {disease}?",
-                f"How do I diagnose {disease}?"
-            ]
+            suggestions = [f"How is {disease} treated?", f"What prevents {disease}?", f"What causes {disease}?", f"How do I diagnose {disease}?"]
         else:
-            suggestions = [
-                "What are common broiler diseases?",
-                "How to prevent disease outbreaks?",
-                "What are Newcastle disease symptoms?",
-                "How is Coccidiosis treated?"
-            ]
+            suggestions = ["What are common broiler diseases?", "How to prevent disease outbreaks?", "What are Newcastle disease symptoms?", "How is Coccidiosis treated?"]
     elif any(term in last_query.lower() for term in ['feed', 'housing', 'management', 'care']):
-        suggestions = [
-            "What's the ideal feeding program?",
-            "How should I set up broiler housing?",
-            "What temperature is best for broilers?",
-            "How to manage broiler waste?"
-        ]
+        suggestions = ["What's the ideal feeding program?", "How should I set up broiler housing?", "What temperature is best for broilers?", "How to manage broiler waste?"]
     elif any(term in last_query.lower() for term in ['breed', 'type', 'variety', 'strain']):
-        suggestions = [
-            "Which breed is best for small farms?",
-            "What are Cobb breed advantages?",
-            "How do Ross breeds handle heat?",
-            "How is Hubbard different from others?"
-        ]
+        suggestions = ["Which breed is best for small farms?", "What are Cobb breed advantages?", "How do Ross breeds handle heat?", "How is Hubbard different from others?"]
     else:
-        suggestions = [
-            "What are best broiler farming practices?",
-            "How to maximize growth rate?",
-            "What vaccines are essential?",
-            "How to manage ventilation properly?"
-        ]
-    
+        suggestions = ["What are best broiler farming practices?", "How to maximize growth rate?", "What vaccines are essential?", "How to manage ventilation properly?"]
     return suggestions
-
 
 def ensure_follow_up_question(response, query):
     if response.strip().endswith('?'):
         return response
-    
-    response_lower = response.lower()
-    query_lower = query.lower()
-    
     follow_ups = {
         'breed': "Are you considering a particular breed for your farm?",
         'disease': "Are you currently dealing with sick birds in your flock?",
@@ -223,85 +178,75 @@ def ensure_follow_up_question(response, query):
         'management': "How many birds are you managing right now?",
         'general': "Is there anything else you'd like to know about this?"
     }
-    
-    if any(term in query_lower for term in ['breed', 'type', 'variety', 'strain']) or any(term in response_lower for term in ['breed', 'hubbard', 'cobb', 'ross']):
+    query_lower = query.lower()
+    if any(t in query_lower for t in ['breed', 'type', 'variety', 'strain']):
         follow_up = follow_ups['breed']
-    elif any(term in query_lower for term in ['disease', 'symptom', 'treatment', 'vaccine', 'sick', 'ill']) or any(term in response_lower for term in ['disease', 'symptom', 'treatment', 'vaccine', 'sick', 'ill']):
+    elif any(t in query_lower for t in ['disease', 'symptom', 'treatment', 'vaccine']):
         follow_up = follow_ups['disease']
-    elif any(term in query_lower for term in ['feed', 'food', 'nutrition', 'diet']) or any(term in response_lower for term in ['feed', 'food', 'nutrition', 'diet']):
+    elif any(t in query_lower for t in ['feed', 'food', 'nutrition']):
         follow_up = follow_ups['feed']
-    elif any(term in query_lower for term in ['housing', 'shelter', 'coop', 'ventilation']) or any(term in response_lower for term in ['housing', 'shelter', 'coop', 'ventilation']):
+    elif any(t in query_lower for t in ['housing', 'shelter', 'coop']):
         follow_up = follow_ups['housing']
-    elif any(term in query_lower for term in ['manage', 'care', 'practice', 'operation']) or any(term in response_lower for term in ['manage', 'care', 'practice', 'operation']):
+    elif any(t in query_lower for t in ['manage', 'care', 'practice']):
         follow_up = follow_ups['management']
     else:
         follow_up = follow_ups['general']
-    
     return response + f"\n\n<div class='follow-up'>{follow_up}</div>"
 
-
 def naturalize_response(response):
-    impersonal_phrases = [
-        "based on the information provided",
-        "according to the context",
-        "the context mentions that",
-        "based on the context provided",
-        "the information states that"
-    ]
+    impersonal_phrases = ["based on the information provided","according to the context","the context mentions that","based on the context provided","the information states that"]
     for phrase in impersonal_phrases:
         response = re.sub(phrase, "from my experience", response, flags=re.IGNORECASE)
-    
-    naturalizations = {
-        r"is described as": "is known to be",
-        r"are described as": "are typically",
-        r"this suggests that": "this means",
-        r"it is suggested that": "I've found that",
-        r"additionally": "also",
-        r"furthermore": "plus",
-        r"moreover": "and"
-    }
+    naturalizations = {"is described as": "is known to be","are described as": "are typically","this suggests that": "this means","it is suggested that": "I've found that","additionally": "also","furthermore": "plus","moreover": "and"}
     for pattern, replacement in naturalizations.items():
         response = re.sub(pattern, replacement, response, flags=re.IGNORECASE)
-    
-    response = re.sub(r"\s+", " ", response).strip()
-    return response
-
+    return re.sub(r"\s+", " ", response).strip()
 
 def ask_qa_chain(qa_chain, query: str, context: str = "") -> str:
     enhanced_query = f"{context} {query}" if context else query
-    
     try:
         out = qa_chain.invoke({"query": enhanced_query})
         result = out["result"].strip() if isinstance(out, dict) and "result" in out else str(out).strip()
     except Exception:
-        try:
-            out = qa_chain({"query": enhanced_query})
-            result = out.get("result", str(out)).strip() if isinstance(out, dict) else str(out).strip()
-        except Exception as e:
-            result = f"I encountered an error: {str(e)}"
-    
+        out = qa_chain({"query": enhanced_query})
+        result = out.get("result", str(out)).strip() if isinstance(out, dict) else str(out).strip()
     result = naturalize_response(result)
-    
-    no_knowledge_phrases = [
-        "i don't know", "i don't have information", "not in the context", 
-        "not provided in the context", "no information", "not covered"
-    ]
-    if not result or any(phrase in result.lower() for phrase in no_knowledge_phrases):
+    if not result or any(p in result.lower() for p in ["i don't know","not in the context","no information"]):
         result = "I specialize in backyard broiler farming topics like health management, feeding practices, housing setup, and disease prevention. Feel free to ask me about any of these areas!"
-        result = ensure_follow_up_question(result, query)
-    else:
-        result = ensure_follow_up_question(result, query)
-    
-    return result
+    return ensure_follow_up_question(result, query)
+
+# -------------------------
+# Weather + Feed Cost + RAG Routing
+# -------------------------
+from tools.weather import get_weather
+from tools.feed_calculator import feed_cost_calculator
+
+def handle_query(query: str, qa_chain, context: str = ""):
+    q_lower = query.lower()
+    # Weather
+    if "weather" in q_lower or "rain" in q_lower or "temperature" in q_lower:
+        city_match = re.search(r"in\s+([a-zA-Z\s]+)", query, re.IGNORECASE)
+        city = city_match.group(1).strip() if city_match else "Lagos"
+        return get_weather(city, "NG")
+    # Feed cost
+    if "feed cost" in q_lower or ("feed" in q_lower and "kg" in q_lower and "₦" in q_lower):
+        bird_match = re.search(r'(\d+)\s*(?:birds|chickens)', q_lower)
+        feed_match = re.search(r'(\d+(?:\.\d+)?)\s*kg', q_lower)
+        price_match = re.search(r'₦?\s*(\d+(?:\.\d+)?)\s*/?\s*kg', q_lower)
+        if bird_match and feed_match and price_match:
+            bird_count = int(bird_match.group(1))
+            feed_per_bird_kg = float(feed_match.group(1))
+            price_per_kg = float(price_match.group(1))
+            return feed_cost_calculator.run(bird_count, feed_per_bird_kg, price_per_kg)
+        return "Please provide the number of birds, feed per bird in kg, and feed price per kg so I can calculate."
+    # Default → RAG
+    return ask_qa_chain(qa_chain, query, context)
 
 # -------------------------
 # App header & Input form
 # -------------------------
 st.title("🐔 Chikka AI")
-st.write(
-    "👋 Hello! I'm **Chikka**, your friendly assistant for backyard broiler farming. "
-    "I'm here to help with practical advice on broiler care, health, and management."
-)
+st.write("👋 Hello! I'm **Chikka**, your friendly assistant for backyard broiler farming.")
 
 if "suggestions" in st.session_state and st.session_state.suggestions:
     st.markdown("**You might want to ask:**")
@@ -313,11 +258,7 @@ if "suggestions" in st.session_state and st.session_state.suggestions:
                 st.session_state.auto_submit = True
 
 with st.form(key="query_form", clear_on_submit=True):
-    user_query = st.text_input(
-        "Ask me about broilers:",
-        key="query_input",
-        placeholder="What would you like to know about broiler farming?"
-    )
+    user_query = st.text_input("Ask me about broilers:", key="query_input", placeholder="What would you like to know about broiler farming?")
     submitted = st.form_submit_button("Send")
 
 if "auto_submit" in st.session_state and st.session_state.auto_submit:
@@ -325,7 +266,7 @@ if "auto_submit" in st.session_state and st.session_state.auto_submit:
     st.session_state.auto_submit = False
 
 # -------------------------
-# Load FAISS & LLM lazily (only once)
+# Load FAISS & LLM
 # -------------------------
 FAISS_PATH = "rag_assets/faiss_index"
 try:
@@ -343,51 +284,22 @@ except Exception as e:
 qa_chain = st.session_state._qa_chain
 
 # -------------------------
-# Weather Integration
-# -------------------------
-from tools.weather import get_weather
-
-def extract_city(query: str) -> str:
-    match = re.search(r"in\s+([A-Za-z\s]+)", query, re.IGNORECASE)
-    if match:
-        return match.group(1).strip()
-    return "Lagos"  # fallback default
-
-def handle_query(query: str, qa_chain, context: str = ""):
-    q_lower = query.lower()
-    if "weather" in q_lower or "rain" in q_lower or "temperature" in q_lower:
-        city = extract_city(query)
-        return get_weather(city, "NG")
-    return ask_qa_chain(qa_chain, query, context)
-
-# -------------------------
 # Handle a new submission
 # -------------------------
 if submitted and user_query and user_query.strip():
     q = user_query.strip()
-    
     if st.session_state.history:
         recent_messages = st.session_state.history[:3]
         context_text = " ".join([msg["content"] for msg in recent_messages if msg["role"] == "User"])
         entities = extract_key_entities(context_text)
         if entities:
             st.session_state.conversation_context = f"We've been discussing: {', '.join(entities)}"
-
-    st.session_state.history.insert(
-        0,
-        {"role": "User", "content": q, "time": datetime.datetime.now().strftime("%H:%M")}
-    )
-
+    st.session_state.history.insert(0, {"role": "User", "content": q, "time": datetime.datetime.now().strftime("%H:%M")})
     placeholder = st.empty()
     with st.spinner("Thinking about your question..."):
         answer_text = handle_query(q, qa_chain, st.session_state.conversation_context)
     placeholder.empty()
-
-    st.session_state.history.insert(
-        0,
-        {"role": "ChikkaBot", "content": answer_text, "time": datetime.datetime.now().strftime("%H:%M")}
-    )
-    
+    st.session_state.history.insert(0, {"role": "ChikkaBot", "content": answer_text, "time": datetime.datetime.now().strftime("%H:%M")})
     st.session_state.suggestions = generate_suggestions(q, answer_text)
 
 # -------------------------
@@ -395,20 +307,16 @@ if submitted and user_query and user_query.strip():
 # -------------------------
 st.markdown("### Conversation")
 chat_box = st.container()
-
 with chat_box:
     st.markdown('<div class="chat-container">', unsafe_allow_html=True)
     if not st.session_state.history:
         st.markdown("<p style='color: #888; text-align: center;'>No messages yet. Ask me anything about broiler farming!</p>", unsafe_allow_html=True)
     else:
         for msg in st.session_state.history:
-            role = msg.get("role", "User")
-            content = msg.get("content", "")
-            timestamp = msg.get("time", "")
+            role, content, timestamp = msg.get("role", "User"), msg.get("content", ""), msg.get("time", "")
             css_class = "user" if role == "User" else "bot"
             avatar = "👤" if role == "User" else "🐔"
             label = f"{avatar} {role}"
-            
             st.markdown(f"""
                 <div class="msg {css_class}">
                     <div class="role">{label}</div>
@@ -423,10 +331,8 @@ with chat_box:
 # -------------------------
 st.write("")
 st.caption("💡 Conversation history is temporary and will clear when you refresh the page.")
-
 if st.button("🧹 Clear Conversation"):
     st.session_state.history = []
     st.session_state.conversation_context = ""
-    if "suggestions" in st.session_state:
-        del st.session_state.suggestions
+    if "suggestions" in st.session_state: del st.session_state.suggestions
     st.rerun()
