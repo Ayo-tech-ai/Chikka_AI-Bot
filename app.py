@@ -29,7 +29,7 @@ class ReActPoultryAgent:
         """Remember important context for ALL conversation types"""
         self.last_intent = reasoning["intent"]
     
-    # Remember broader topics
+        # Remember broader topics
         if reasoning["intent"] == "vaccination_reminder":
             self.last_topic = "vaccination"
             # Remember vaccine type if mentioned
@@ -56,22 +56,22 @@ class ReActPoultryAgent:
                     self.entity_memory["disease"] = disease.title()
                     break
                 
-    elif reasoning["intent"] == "weather_inquiry":
-        self.last_topic = "weather"
-        # Remember location if mentioned
-        city = extract_city(query)
-        if city != "Lagos":  # Only if specific city mentioned
-            self.entity_memory["location"] = city
+        elif reasoning["intent"] == "weather_inquiry":
+            self.last_topic = "weather"
+            # Remember location if mentioned
+            city = extract_city(query)
+            if city != "Lagos":  # Only if specific city mentioned
+                self.entity_memory["location"] = city
+     
+        # Build comprehensive conversation context
+        context_parts = []
+        if self.last_topic:
+            context_parts.append(f"Discussing {self.last_topic}")
+        if self.entity_memory:
+            for key, value in self.entity_memory.items():
+                context_parts.append(f"{key}: {value}")
     
-    # Build comprehensive conversation context
-    context_parts = []
-    if self.last_topic:
-        context_parts.append(f"Discussing {self.last_topic}")
-    if self.entity_memory:
-        for key, value in self.entity_memory.items():
-            context_parts.append(f"{key}: {value}")
-    
-    self.conversation_context = ". ".join(context_parts) if context_parts else ""
+        self.conversation_context = ". ".join(context_parts) if context_parts else ""
     
     def process_query(self, query: str, context: str = "") -> Dict:
         """ReAct pattern: Reason + Act"""
