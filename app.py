@@ -18,8 +18,60 @@ from tools.reminder import create_vaccination_reminder
 
 class ReActPoultryAgent:
     def __init__(self, qa_chain):
-        self.qa_chain = qa_chain
-        self.reasoning_history = []
+    self.qa_chain = qa_chain
+    self.reasoning_history = []
+    self.conversation_context = ""
+    self.last_intent = None
+    self.last_topic = None  # Broader topic tracking
+    self.entity_memory = {}  # Store multiple entities
+
+    def _update_conversation_memory(self, query: str, reasoning: Dict):
+    """Remember important context for ALL conversation types"""
+    self.last_intent = reasoning["intent"]
+    
+    # Remember broader topics
+    if reasoning["intent"] == "vaccination_reminder":
+        self.last_topic = "vaccination"
+        # Remember vaccine type if mentioned
+        if "newcastle" in query.lower():
+            self.entity_memory["vaccine_type"] = "Newcastle"
+        elif "gumboro" in query.lower():
+            self.entity_memory["vaccine_type"] = "Gumboro"
+            
+    elif reasoning["intent"] == "feed_calculation":
+        self.last_topic = "feeding"
+        # Remember feed parameters if mentioned
+        num_birds, feed_per_bird, price_per_kg = extract_feed_parameters(query)
+        if num_birds:
+            self.entity_memory["bird_count"] = num_birds
+        if feed_per_bird:
+            self.entity_memory["feed_amount"] = feed_per_bird
+            
+    elif reasoning["intent"] == "health_advice":
+        self.last_topic = "health"
+        # Remember disease if mentioned
+        diseases = ['newcastle', 'gumboro', 'coccidiosis', 'marek', 'ibd']
+        for disease in diseases:
+            if disease in query.lower():
+                self.entity_memory["disease"] = disease.title()
+                break
+                
+    elif reasoning["intent"] == "weather_inquiry":
+        self.last_topic = "weather"
+        # Remember location if mentioned
+        city = extract_city(query)
+        if city != "Lagos":  # Only if specific city mentioned
+            self.entity_memory["location"] = city
+    
+    # Build comprehensive conversation context
+    context_parts = []
+    if self.last_topic:
+        context_parts.append(f"Discussing {self.last_topic}")
+    if self.entity_memory:
+        for key, value in self.entity_memory.items():
+            context_parts.append(f"{key}: {value}")
+    
+    self.conversation_context = ". ".join(context_parts) if context_parts else ""
     
     def process_query(self, query: str, context: str = "") -> Dict:
         """ReAct pattern: Reason + Act"""
