@@ -6,6 +6,7 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from typing import List, Dict
 import datetime
 import re
+from tools.calculator import calculate_feed_cost
 
 # -------------------------
 # UI / Appearance settings
