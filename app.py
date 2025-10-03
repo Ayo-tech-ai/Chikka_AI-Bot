@@ -13,6 +13,152 @@ from tools.calculator import calculate_feed_cost
 from tools.reminder import create_vaccination_reminder
 
 # -------------------------
+# ReAct Agent Class
+# -------------------------
+
+class ReActPoultryAgent:
+    def __init__(self, qa_chain):
+        self.qa_chain = qa_chain
+        self.reasoning_history = []
+    
+    def process_query(self, query: str, context: str = "") -> Dict:
+        """ReAct pattern: Reason + Act"""
+        
+        # REASONING STEP
+        reasoning = self._reason_about_query(query, context)
+        self.reasoning_history.append(reasoning)
+        
+        # ACTING STEP
+        action_result = self._execute_action(reasoning, query, context)
+        
+        return {
+            "reasoning": reasoning,
+            "result": action_result,
+            "requires_follow_up": reasoning.get("missing_info")
+        }
+    
+    def _reason_about_query(self, query: str, context: str) -> Dict:
+        """Analyze the query and plan actions"""
+        reasoning_steps = []
+        
+        # Step 1: Identify primary intent
+        intent = self._identify_intent(query)
+        reasoning_steps.append(f"Primary intent: {intent}")
+        
+        # Step 2: Check for required information
+        missing_info = self._check_required_info(query, intent)
+        reasoning_steps.append(f"Missing information: {missing_info}")
+        
+        # Step 3: Plan tool usage
+        tool_plan = self._plan_tool_usage(intent, missing_info)
+        reasoning_steps.append(f"Tool plan: {tool_plan}")
+        
+        return {
+            "intent": intent,
+            "missing_info": missing_info,
+            "reasoning_steps": reasoning_steps,
+            "tool_plan": tool_plan,
+            "requires_clarification": bool(missing_info)
+        }
+    
+    def _identify_intent(self, query: str) -> str:
+        """Enhanced intent recognition"""
+        query_lower = query.lower()
+        
+        if any(term in query_lower for term in ['weather', 'temperature', 'rain']):
+            return "weather_inquiry"
+        elif any(term in query_lower for term in ['feed cost', 'calculate', 'budget']):
+            return "feed_calculation"
+        elif any(term in query_lower for term in ['remind', 'vaccine', 'schedule']):
+            return "vaccination_reminder"
+        elif any(term in query_lower for term in ['disease', 'symptom', 'treatment']):
+            return "health_advice"
+        elif any(term in query_lower for term in ['housing', 'ventilation', 'shelter']):
+            return "housing_advice"
+        else:
+            return "general_inquiry"
+    
+    def _check_required_info(self, query: str, intent: str) -> List[str]:
+        """Reason about missing information needed to complete the task"""
+        missing = []
+        
+        if intent == "feed_calculation":
+            numbers = re.findall(r'\d+\.?\d*', query)
+            if len(numbers) < 3:
+                missing.append("feed_parameters")
+        
+        elif intent == "vaccination_reminder":
+            if not any(vaccine in query.lower() for vaccine in ['newcastle', 'gumboro', 'coccidiosis']):
+                missing.append("vaccine_type")
+            if not any(word in query.lower() for word in ['tomorrow', 'monday', 'next', 'date']):
+                missing.append("timing")
+        
+        elif intent == "weather_inquiry":
+            if "in " not in query.lower():
+                missing.append("location")
+        
+        return missing
+    
+    def _plan_tool_usage(self, intent: str, missing_info: List[str]) -> Dict:
+        """Plan which tools to use and in what order"""
+        if missing_info:
+            return {
+                "primary_action": "clarify",
+                "tools": [],
+                "clarification_type": missing_info[0]
+            }
+        
+        tool_map = {
+            "weather_inquiry": {"primary_action": "get_weather", "tools": ["weather"]},
+            "feed_calculation": {"primary_action": "calculate_feed", "tools": ["calculator"]},
+            "vaccination_reminder": {"primary_action": "create_reminder", "tools": ["reminder"]},
+            "health_advice": {"primary_action": "provide_advice", "tools": ["qa_chain"]},
+            "housing_advice": {"primary_action": "provide_advice", "tools": ["qa_chain"]},
+            "general_inquiry": {"primary_action": "provide_advice", "tools": ["qa_chain"]}
+        }
+        
+        return tool_map.get(intent, {"primary_action": "provide_advice", "tools": ["qa_chain"]})
+    
+    def _execute_action(self, reasoning: Dict, query: str, context: str) -> str:
+        """Execute the planned action based on reasoning"""
+        tool_plan = reasoning["tool_plan"]
+        
+        if tool_plan["primary_action"] == "clarify":
+            return self._ask_clarification(tool_plan["clarification_type"])
+        
+        # Route to appropriate tool (using your existing functions)
+        if tool_plan["primary_action"] == "get_weather":
+            city = extract_city(query)
+            return get_weather(city, "NG")
+        
+        elif tool_plan["primary_action"] == "calculate_feed":
+            num_birds, feed_per_bird, price_per_kg = extract_feed_parameters(query)
+            if all([num_birds, feed_per_bird, price_per_kg]):
+                return calculate_feed_cost(num_birds, feed_per_bird, price_per_kg)
+            else:
+                return "I can help calculate feed costs! Please include: number of birds, daily feed per bird (kg), and price per kg of feed."
+        
+        elif tool_plan["primary_action"] == "create_reminder":
+            vaccine_type, date_info, bird_count = extract_reminder_parameters(query)
+            if vaccine_type and date_info:
+                return create_vaccination_reminder(vaccine_type, date_info, bird_count)
+            else:
+                return "I can help set vaccination reminders! Please specify the vaccine type and when. Example: 'Remind me to vaccinate for Newcastle next Monday'"
+        
+        else:  # provide_advice - use your existing RAG
+            return ask_qa_chain(self.qa_chain, query, context)
+    
+    def _ask_clarification(self, clarification_type: str) -> str:
+        """Ask intelligent clarification questions based on reasoning"""
+        clarifications = {
+            "feed_parameters": "I'd be happy to calculate feed costs! Could you tell me: how many birds, how much feed each bird gets daily (in kg), and the price per kg of feed?",
+            "vaccine_type": "Which vaccine would you like me to remind you about? (Newcastle, Gumboro, Coccidiosis, etc.)",
+            "timing": "When should I set this vaccination reminder for? (tomorrow, next Monday, specific date)",
+            "location": "Which city would you like the weather information for?"
+        }
+        return clarifications.get(clarification_type, "Could you provide a bit more detail so I can help you better?")
+
+# -------------------------
 # UI / Appearance settings
 # -------------------------
 
@@ -349,7 +495,7 @@ def extract_feed_parameters(query: str) -> tuple:
                 if price_per_kg is None and (100 <= num <= 5000):  # Reasonable price range
                     price_per_kg = num
                     continue
-        
+    
         # If we couldn't identify all parameters by context, use positional fallback
         if num_birds is None and len(numbers) >= 1:
             num_birds = int(numbers[0])
@@ -410,33 +556,39 @@ def extract_reminder_parameters(query: str) -> tuple:
         return None, None, None
 
 def handle_query(query: str, qa_chain, context: str = ""):
-    q_lower = query.lower()
-    
-    # Existing weather routing
-    if "weather" in q_lower or "rain" in q_lower or "temperature" in q_lower:
-        city = extract_city(query)
-        return get_weather(city, "NG")
-    
-    # Feed cost calculation routing
-    if any(term in q_lower for term in ['feed cost', 'feed calculation', 'calculate feed', 'feed budget', 'cost of feeding']):
-        num_birds, feed_per_bird, price_per_kg = extract_feed_parameters(query)
+    # Use ReAct agent if available, otherwise fallback to original logic
+    if "react_agent" in st.session_state:
+        result = st.session_state.react_agent.process_query(query, context)
         
-        if num_birds and feed_per_bird and price_per_kg:
-            return calculate_feed_cost(num_birds, feed_per_bird, price_per_kg)
-        else:
-            return "I can help calculate feed costs! Please include: number of birds, feed per bird (kg), and price per kg."
-    
-    # NEW: Vaccination reminder routing
-    if any(term in q_lower for term in ['remind', 'reminder', 'vaccination', 'vaccinate', 'schedule']):
-        vaccine_type, date_info, bird_count = extract_reminder_parameters(query)
+        # Show reasoning in expander (optional - you can remove this if you don't want it)
+        with st.expander("🔍 See my thought process"):
+            for step in result["reasoning"]["reasoning_steps"]:
+                st.write(f"• {step}")
         
-        if vaccine_type and date_info:
-            return create_vaccination_reminder(vaccine_type, date_info, bird_count)
-        else:
-            return "I can help set vaccination reminders! Please specify the vaccine type and date. Example: 'Remind me to vaccinate for Newcastle disease next Monday'"
-    
-    # Existing RAG fallback
-    return ask_qa_chain(qa_chain, query, context)
+        return result["result"]
+    else:
+        # Fallback to your original logic (keeping your existing functionality)
+        q_lower = query.lower()
+        
+        if "weather" in q_lower or "rain" in q_lower or "temperature" in q_lower:
+            city = extract_city(query)
+            return get_weather(city, "NG")
+        
+        if any(term in q_lower for term in ['feed cost', 'feed calculation', 'calculate feed', 'feed budget', 'cost of feeding']):
+            num_birds, feed_per_bird, price_per_kg = extract_feed_parameters(query)
+            if num_birds and feed_per_bird and price_per_kg:
+                return calculate_feed_cost(num_birds, feed_per_bird, price_per_kg)
+            else:
+                return "I can help calculate feed costs! Please include: number of birds, feed per bird (kg), and price per kg."
+        
+        if any(term in q_lower for term in ['remind', 'reminder', 'vaccination', 'vaccinate', 'schedule']):
+            vaccine_type, date_info, bird_count = extract_reminder_parameters(query)
+            if vaccine_type and date_info:
+                return create_vaccination_reminder(vaccine_type, date_info, bird_count)
+            else:
+                return "I can help set vaccination reminders! Please specify the vaccine type and date. Example: 'Remind me to vaccinate for Newcastle disease next Monday'"
+        
+        return ask_qa_chain(qa_chain, query, context)
 
 # -------------------------
 # App header & Input form
@@ -482,6 +634,9 @@ try:
             qa_chain = make_qa_chain(llm, vectorstore)
             st.session_state.faiss_loaded = True
             st.session_state._qa_chain = qa_chain
+            
+            # Initialize ReAct agent
+            st.session_state.react_agent = ReActPoultryAgent(qa_chain)
 except Exception as e:
     st.error(f"Sorry, I'm having trouble loading my knowledge base: {e}")
     st.stop()
@@ -561,3 +716,4 @@ if st.button("🧹 Clear Conversation"):
     if "suggestions" in st.session_state:
         del st.session_state.suggestions
     st.rerun()
+        
