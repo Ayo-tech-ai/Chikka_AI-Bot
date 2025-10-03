@@ -6,11 +6,15 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from typing import List, Dict
 import datetime
 import re
+
+# Import tools
+from tools.weather import get_weather
 from tools.calculator import calculate_feed_cost
 
 # -------------------------
 # UI / Appearance settings
 # -------------------------
+
 st.set_page_config(page_title="Chikka AI Assistant", layout="centered")
 
 # Simple CSS for chat bubbles + scroll area
@@ -90,6 +94,7 @@ st.markdown(
 # -------------------------
 # Session state init
 # -------------------------
+
 if "history" not in st.session_state:
     st.session_state.history: List[Dict[str, str]] = []
 
@@ -102,6 +107,7 @@ if "conversation_context" not in st.session_state:
 # -------------------------
 # Backend helpers (cached)
 # -------------------------
+
 @st.cache_resource(show_spinner=False)
 def load_vectorstore(faiss_path: str):
     from langchain_community.vectorstores import FAISS
@@ -110,7 +116,6 @@ def load_vectorstore(faiss_path: str):
     embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
     db = FAISS.load_local(faiss_path, embeddings, allow_dangerous_deserialization=True)
     return db
-
 
 @st.cache_resource(show_spinner=False)
 def init_llm_from_groq(model_name: str = "llama-3.3-70b-versatile"):
@@ -124,24 +129,24 @@ def init_llm_from_groq(model_name: str = "llama-3.3-70b-versatile"):
     llm = ChatGroq(groq_api_key=groq_key, model=model_name)
     return llm
 
-
 def make_qa_chain(llm, vectorstore):
     retriever = vectorstore.as_retriever()
-    
+
     from langchain.prompts import PromptTemplate
-    prompt_template = """You are Chikka, a friendly expert AI assistant specialized in backyard broiler farming. 
+    prompt_template = """You are Chikka, a friendly expert AI assistant specialized in backyard broiler farming.
+
 Provide helpful, conversational answers that are clear and focused. Be naturally conversational but avoid unnecessary fluff.
 
-After providing your main answer, end with a natural follow-up question that continues the conversation. 
+After providing your main answer, end with a natural follow-up question that continues the conversation.
 Make the follow-up relevant to the topic and helpful for the farmer.
 
 Context: {context}
 
 Question: {question}
 
-Answer in a friendly, expert tone. Share knowledge conversationally while staying on topic. 
+Answer in a friendly, expert tone. Share knowledge conversationally while staying on topic.
 End with a helpful follow-up question to continue the conversation."""
-    
+
     PROMPT = PromptTemplate(
         template=prompt_template, input_variables=["context", "question"]
     )
@@ -154,21 +159,19 @@ End with a helpful follow-up question to continue the conversation."""
     )
     return qa_chain
 
-
 def extract_key_entities(text):
     patterns = [
         r'\b(Newcastle|Gumboro|Coccidiosis|Marek\'s|IBD|Avian Influenza|AI|CRD|Fowl Cholera|Fowl Pox)\b',
         r'\b(broiler|chick|poultry|farm|feed|vaccine|ventilation|temperature|humidity)\b',
         r'\b(symptom|treatment|prevention|cause|diagnosis|spread|transmission)\b'
     ]
-    
+
     entities = []
     for pattern in patterns:
         matches = re.findall(pattern, text, re.IGNORECASE)
         entities.extend(matches)
     
     return list(set(entities))
-
 
 def generate_suggestions(last_query, last_response):
     suggestions = []
@@ -210,14 +213,13 @@ def generate_suggestions(last_query, last_response):
             "What vaccines are essential?",
             "How to manage ventilation properly?"
         ]
-    
-    return suggestions
 
+    return suggestions
 
 def ensure_follow_up_question(response, query):
     if response.strip().endswith('?'):
         return response
-    
+
     response_lower = response.lower()
     query_lower = query.lower()
     
@@ -245,7 +247,6 @@ def ensure_follow_up_question(response, query):
     
     return response + f"\n\n<div class='follow-up'>{follow_up}</div>"
 
-
 def naturalize_response(response):
     impersonal_phrases = [
         "based on the information provided",
@@ -256,7 +257,7 @@ def naturalize_response(response):
     ]
     for phrase in impersonal_phrases:
         response = re.sub(phrase, "from my experience", response, flags=re.IGNORECASE)
-    
+
     naturalizations = {
         r"is described as": "is known to be",
         r"are described as": "are typically",
@@ -272,10 +273,9 @@ def naturalize_response(response):
     response = re.sub(r"\s+", " ", response).strip()
     return response
 
-
 def ask_qa_chain(qa_chain, query: str, context: str = "") -> str:
     enhanced_query = f"{context} {query}" if context else query
-    
+
     try:
         out = qa_chain.invoke({"query": enhanced_query})
         result = out["result"].strip() if isinstance(out, dict) and "result" in out else str(out).strip()
@@ -300,18 +300,101 @@ def ask_qa_chain(qa_chain, query: str, context: str = "") -> str:
     
     return result
 
+def extract_city(query: str) -> str:
+    match = re.search(r"in\s+([A-Za-z\s]+)", query, re.IGNORECASE)
+    if match:
+        return match.group(1).strip()
+    return "Lagos"  # fallback default
+
+def extract_feed_parameters(query: str) -> tuple:
+    """
+    Extract num_birds, feed_per_bird, and price_per_kg from natural language query.
+    Returns (num_birds, feed_per_bird, price_per_kg) or (None, None, None) if not found.
+    """
+    try:
+        # Find all numbers in the query (including decimals)
+        numbers = re.findall(r'\d+\.?\d*', query)
+        numbers = [float(num) for num in numbers]
+        
+        if len(numbers) < 3:
+            return None, None, None
+        
+        # Simple heuristic: assume order is birds, feed_per_bird, price
+        # But we can make it smarter based on context clues
+        num_birds = None
+        feed_per_bird = None
+        price_per_kg = None
+        
+        # Look for context clues to assign numbers correctly
+        query_lower = query.lower()
+        
+        # Try to identify which number is which based on context
+        for i, num in enumerate(numbers):
+            # Look for bird count indicators
+            if any(word in query_lower for word in ['bird', 'chicken', 'broiler', 'flock', 'stock']):
+                # The number near these words is likely the bird count
+                if num_birds is None and (20 <= num <= 10000):  # Reasonable bird count range
+                    num_birds = int(num)
+                    continue
+            
+            # Look for feed amount indicators
+            if any(word in query_lower for word in ['kg', 'kilogram', 'feed', 'consum', 'eat']):
+                if feed_per_bird is None and (0.1 <= num <= 5.0):  # Reasonable feed per bird range
+                    feed_per_bird = num
+                    continue
+            
+            # Look for price indicators
+            if any(word in query_lower for word in ['price', 'cost', '₦', 'naira', 'per kg', 'per kilogram']):
+                if price_per_kg is None and (100 <= num <= 5000):  # Reasonable price range
+                    price_per_kg = num
+                    continue
+        
+        # If we couldn't identify all parameters by context, use positional fallback
+        if num_birds is None and len(numbers) >= 1:
+            num_birds = int(numbers[0])
+        if feed_per_bird is None and len(numbers) >= 2:
+            feed_per_bird = numbers[1]
+        if price_per_kg is None and len(numbers) >= 3:
+            price_per_kg = numbers[2]
+        
+        return num_birds, feed_per_bird, price_per_kg
+        
+    except Exception as e:
+        return None, None, None
+
+def handle_query(query: str, qa_chain, context: str = ""):
+    q_lower = query.lower()
+    
+    # Existing weather routing
+    if "weather" in q_lower or "rain" in q_lower or "temperature" in q_lower:
+        city = extract_city(query)
+        return get_weather(city, "NG")
+    
+    # NEW: Feed cost calculation routing
+    if any(term in q_lower for term in ['feed cost', 'feed calculation', 'calculate feed', 'feed budget', 'cost of feeding']):
+        num_birds, feed_per_bird, price_per_kg = extract_feed_parameters(query)
+        
+        if num_birds and feed_per_bird and price_per_kg:
+            return calculate_feed_cost(num_birds, feed_per_bird, price_per_kg)
+        else:
+            # If we can't extract all parameters, provide a helpful message
+            return "I can help calculate feed costs! Please include: number of birds, feed per bird (kg), and price per kg. Example: 'Calculate feed cost for 100 birds at 2.5kg each with price ₦500 per kg'"
+    
+    # Existing RAG fallback
+    return ask_qa_chain(qa_chain, query, context)
 
 # -------------------------
 # App header & Input form
 # -------------------------
+
 st.title("🐔 Chikka AI")
 st.write(
-    "👋 Hello! I'm **Chikka**, your friendly assistant for backyard broiler farming. "
+    "👋 Hello! I'm Chikka, your friendly assistant for backyard broiler farming. "
     "I'm here to help with practical advice on broiler care, health, and management."
 )
 
 if "suggestions" in st.session_state and st.session_state.suggestions:
-    st.markdown("**You might want to ask:**")
+    st.markdown("You might want to ask:")
     cols = st.columns(2)
     for i, suggestion in enumerate(st.session_state.suggestions[:4]):
         with cols[i % 2]:
@@ -334,6 +417,7 @@ if "auto_submit" in st.session_state and st.session_state.auto_submit:
 # -------------------------
 # Load FAISS & LLM lazily (only once)
 # -------------------------
+
 FAISS_PATH = "rag_assets/faiss_index"
 try:
     if not st.session_state.faiss_loaded:
@@ -350,29 +434,12 @@ except Exception as e:
 qa_chain = st.session_state._qa_chain
 
 # -------------------------
-# Weather Integration
-# -------------------------
-from tools.weather import get_weather
-
-def extract_city(query: str) -> str:
-    match = re.search(r"in\s+([A-Za-z\s]+)", query, re.IGNORECASE)
-    if match:
-        return match.group(1).strip()
-    return "Lagos"  # fallback default
-
-def handle_query(query: str, qa_chain, context: str = ""):
-    q_lower = query.lower()
-    if "weather" in q_lower or "rain" in q_lower or "temperature" in q_lower:
-        city = extract_city(query)
-        return get_weather(city, "NG")
-    return ask_qa_chain(qa_chain, query, context)
-
-# -------------------------
 # Handle a new submission
 # -------------------------
+
 if submitted and user_query and user_query.strip():
     q = user_query.strip()
-    
+
     if st.session_state.history:
         recent_messages = st.session_state.history[:3]
         context_text = " ".join([msg["content"] for msg in recent_messages if msg["role"] == "User"])
@@ -400,6 +467,7 @@ if submitted and user_query and user_query.strip():
 # -------------------------
 # Chat history display
 # -------------------------
+
 st.markdown("### Conversation")
 chat_box = st.container()
 
@@ -415,19 +483,20 @@ with chat_box:
             css_class = "user" if role == "User" else "bot"
             avatar = "👤" if role == "User" else "🐔"
             label = f"{avatar} {role}"
-            
-            st.markdown(f"""
-                <div class="msg {css_class}">
-                    <div class="role">{label}</div>
-                    <div>{content}</div>
-                    <div class="timestamp">{timestamp}</div>
-                </div>
+
+            st.markdown(f"""  
+                <div class="msg {css_class}">  
+                    <div class="role">{label}</div>  
+                    <div>{content}</div>  
+                    <div class="timestamp">{timestamp}</div>  
+                </div>  
             """, unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
 # -------------------------
 # Footer
 # -------------------------
+
 st.write("")
 st.caption("💡 Conversation history is temporary and will clear when you refresh the page.")
 
@@ -437,20 +506,3 @@ if st.button("🧹 Clear Conversation"):
     if "suggestions" in st.session_state:
         del st.session_state.suggestions
     st.rerun()
-
-
-
-
-# -------------------------
-# Feed Cost Calculator Test Block
-# -------------------------
-st.markdown("### 🐔 Feed Cost Calculator (Test)")
-
-with st.expander("Test feed cost calculation"):
-    num_birds = st.number_input("Number of birds:", min_value=1, value=100)
-    feed_per_bird = st.number_input("Feed per bird (kg):", min_value=0.0, value=0.25, step=0.05)
-    price_per_kg = st.number_input("Price per kg (₦):", min_value=0.0, value=500.0, step=50.0)
-
-    if st.button("Calculate Feed Cost"):
-        result = calculate_feed_cost(num_birds, feed_per_bird, price_per_kg)
-        st.markdown(f"**Result:**\n\n{result}")
