@@ -1,6 +1,7 @@
 import streamlit as st
 from datetime import datetime, timedelta
 import re
+import urllib.parse
 
 def create_vaccination_reminder(vaccine_type: str, date_str: str, bird_count: int = None) -> str:
     """
@@ -23,6 +24,7 @@ def create_vaccination_reminder(vaccine_type: str, date_str: str, bird_count: in
 🐔 **Vaccination Reminder for {vaccine_type}**
         
 **Date:** {reminder_date.strftime('%A, %B %d, %Y')}
+**Time:** 9:00 AM (Local Time)
 **Vaccine:** {vaccine_type}
 {'**Number of Birds:** ' + str(bird_count) if bird_count else ''}
 
@@ -46,7 +48,7 @@ def create_vaccination_reminder(vaccine_type: str, date_str: str, bird_count: in
 📅 [Add to Google Calendar]({google_cal_link})
 📱 Or manually add to your phone calendar
 
-*Reminder set for {reminder_date.strftime('%B %d, %Y')}*
+*Reminder set for {reminder_date.strftime('%B %d, %Y')} at 9:00 AM*
 """
         
     except Exception as e:
@@ -95,18 +97,24 @@ def parse_date_from_text(date_text: str):
         return None
 
 def create_google_cal_link(vaccine_type: str, date: datetime, bird_count: int = None):
-    """Create a Google Calendar link with pre-filled details"""
-    title = f"🐔 Vaccination: {vaccine_type}"
+    """Create a Google Calendar link with pre-filled details for UTC+1 timezone"""
+    # Create proper title with both text and emoji
+    title = f"Vaccination Reminder: {vaccine_type} 🐔"
     details = f"Vaccination reminder for {vaccine_type}"
     if bird_count:
         details += f" for {bird_count} birds"
     
-    # Format for Google Calendar
-    start_time = date.strftime('%Y%m%dT090000')  # 9:00 AM
-    end_time = date.strftime('%Y%m%dT100000')    # 10:00 AM
+    # FIXED FOR UTC+1 TIMEZONE
+    # Use local time without timezone indicator (Google will use user's timezone)
+    start_time = date.strftime('%Y%m%dT090000')  # 9:00 AM - no timezone
+    end_time = date.strftime('%Y%m%dT100000')    # 10:00 AM - no timezone
+    
+    # URL encode the parameters
+    encoded_title = urllib.parse.quote(title)
+    encoded_details = urllib.parse.quote(details)
     
     return (f"https://calendar.google.com/calendar/render?"
             f"action=TEMPLATE&"
-            f"text={title}&"
-            f"details={details}&"
+            f"text={encoded_title}&"
+            f"details={encoded_details}&"
             f"dates={start_time}/{end_time}")
