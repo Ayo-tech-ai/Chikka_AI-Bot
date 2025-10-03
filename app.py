@@ -436,3 +436,20 @@ if st.button("🧹 Clear Conversation"):
     if "suggestions" in st.session_state:
         del st.session_state.suggestions
     st.rerun()
+
+
+
+
+# -------------------------
+# Feed Cost Calculator Test Block
+# -------------------------
+st.markdown("### 🐔 Feed Cost Calculator (Test)")
+
+with st.expander("Test feed cost calculation"):
+    num_birds = st.number_input("Number of birds:", min_value=1, value=100)
+    feed_per_bird = st.number_input("Feed per bird (kg):", min_value=0.0, value=0.25, step=0.05)
+    price_per_kg = st.number_input("Price per kg (₦):", min_value=0.0, value=500.0, step=50.0)
+
+    if st.button("Calculate Feed Cost"):
+        result = calculate_feed_cost(num_birds, feed_per_bird, price_per_kg)
+        st.markdown(f"**Result:**\n\n{result}")
