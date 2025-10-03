@@ -10,6 +10,7 @@ import re
 # Import tools
 from tools.weather import get_weather
 from tools.calculator import calculate_feed_cost
+from tools.reminder import create_vaccination_reminder
 
 # -------------------------
 # UI / Appearance settings
@@ -362,6 +363,52 @@ def extract_feed_parameters(query: str) -> tuple:
     except Exception as e:
         return None, None, None
 
+def extract_reminder_parameters(query: str) -> tuple:
+    """
+    Extract vaccine type and date from natural language query
+    """
+    try:
+        query_lower = query.lower()
+        
+        # Extract vaccine type
+        vaccines = ['newcastle', 'gumboro', 'coccidiosis', 'marek', 'ibd', 'avian influenza', 
+                   'fowl pox', 'fowl cholera', 'crd']
+        vaccine_type = None
+        for vaccine in vaccines:
+            if vaccine in query_lower:
+                vaccine_type = vaccine.title()
+                break
+        
+        if not vaccine_type:
+            vaccine_type = "Poultry Vaccine"  # Default
+        
+        # Extract bird count
+        bird_match = re.search(r'(\d+)\s*(birds?|chickens?|broilers?)', query_lower)
+        bird_count = int(bird_match.group(1)) if bird_match else None
+        
+        # Extract date (simple pattern)
+        date_patterns = [
+            r'(tomorrow|next week|in 2 weeks|in 1 month)',
+            r'(\d{1,2}[/-]\d{1,2}[/-]?\d{0,4})',
+            r'(january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2}',
+            r'(monday|tuesday|wednesday|thursday|friday|saturday|sunday)'
+        ]
+        
+        date_info = None
+        for pattern in date_patterns:
+            match = re.search(pattern, query_lower)
+            if match:
+                date_info = match.group(1)
+                break
+        
+        if not date_info:
+            date_info = "soon"  # Default
+        
+        return vaccine_type, date_info, bird_count
+        
+    except Exception as e:
+        return None, None, None
+
 def handle_query(query: str, qa_chain, context: str = ""):
     q_lower = query.lower()
     
@@ -370,15 +417,23 @@ def handle_query(query: str, qa_chain, context: str = ""):
         city = extract_city(query)
         return get_weather(city, "NG")
     
-    # NEW: Feed cost calculation routing
+    # Feed cost calculation routing
     if any(term in q_lower for term in ['feed cost', 'feed calculation', 'calculate feed', 'feed budget', 'cost of feeding']):
         num_birds, feed_per_bird, price_per_kg = extract_feed_parameters(query)
         
         if num_birds and feed_per_bird and price_per_kg:
             return calculate_feed_cost(num_birds, feed_per_bird, price_per_kg)
         else:
-            # If we can't extract all parameters, provide a helpful message
-            return "I can help calculate feed costs! Please include: number of birds, feed per bird (kg), and price per kg. Example: 'Calculate feed cost for 100 birds at 2.5kg each with price ₦500 per kg'"
+            return "I can help calculate feed costs! Please include: number of birds, feed per bird (kg), and price per kg."
+    
+    # NEW: Vaccination reminder routing
+    if any(term in q_lower for term in ['remind', 'reminder', 'vaccination', 'vaccinate', 'schedule']):
+        vaccine_type, date_info, bird_count = extract_reminder_parameters(query)
+        
+        if vaccine_type and date_info:
+            return create_vaccination_reminder(vaccine_type, date_info, bird_count)
+        else:
+            return "I can help set vaccination reminders! Please specify the vaccine type and date. Example: 'Remind me to vaccinate for Newcastle disease next Monday'"
     
     # Existing RAG fallback
     return ask_qa_chain(qa_chain, query, context)
