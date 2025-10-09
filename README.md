@@ -98,7 +98,7 @@ Memory	In-app context tracking with entity memory
 
 1. Clone the Repository
 
-git clone https://github.com/your-username/Chikka_AI.git
+git clone https://github.com/Ayo-tech-ai/Chikka_AI-Bot.git
 cd Chikka_AI
 
 2. Install Requirements
