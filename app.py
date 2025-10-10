@@ -133,6 +133,8 @@ class ReActPoultryAgent:
                 if city:
                     self.entity_memory["location"] = city
                     result = get_weather(city, "NG")
+                    self.pending_action = None
+                    self.pending_intent = None
                 else:
                     result = "I still need to know which city you want weather information for."
             
@@ -170,22 +172,21 @@ class ReActPoultryAgent:
                 num_birds, feed_per_bird, price_per_kg = extract_feed_parameters(query)
                 if all([num_birds, feed_per_bird, price_per_kg]):
                     result = calculate_feed_cost(num_birds, feed_per_bird, price_per_kg)
+                    self.pending_action = None
+                    self.pending_intent = None
                 else:
                     result = "I still need all three parameters: number of birds, daily feed per bird (kg), and price per kg."
         
         except Exception as e:
             result = f"I encountered an error while processing your response: {str(e)}"
         
-        # Clear pending state if action is complete
-        if not self.pending_action:
-            self.pending_intent = None
-            self.pending_parameters = {}
-        
+        # Return follow-up response format
         return {
             "reasoning": {
                 "intent": "follow_up_completion", 
                 "original_intent": original_intent,
-                "follow_up_type": original_action
+                "follow_up_type": original_action,
+                "reasoning_steps": [f"Processing follow-up for {original_action}: {query}"]
             },
             "result": result,
             "requires_follow_up": bool(self.pending_action)
@@ -388,14 +389,6 @@ class ReActPoultryAgent:
         }
         return clarifications.get(clarification_type, "Could you provide a bit more detail so I can help you better?")
 
-# [REST OF THE CODE REMAINS EXACTLY THE SAME - all your existing functions, UI setup, session state, etc.]
-
-# Only updating the agent initialization part to ensure fresh instance
-if "react_agent" in st.session_state:
-    # Ensure the agent has the new attributes
-    if not hasattr(st.session_state.react_agent, 'pending_parameters'):
-        st.session_state.react_agent.pending_parameters = {}
-
 # -------------------------
 # UI / Appearance settings
 # -------------------------
@@ -527,10 +520,6 @@ if "faiss_loaded" not in st.session_state:
 
 if "conversation_context" not in st.session_state:
     st.session_state.conversation_context = ""
-
-# Initialize agent state separately
-if "agent_initialized" not in st.session_state:
-    st.session_state.agent_initialized = False
 
 # -------------------------
 # Backend helpers (cached)
@@ -841,9 +830,11 @@ def handle_query(query: str, qa_chain, context: str = ""):
     if "react_agent" in st.session_state:
         result = st.session_state.react_agent.process_query(query, context)
         
-        # Show reasoning in expander (optional)
+        # Show reasoning in expander (optional) - with safe access
         with st.expander("🔍 See my thought process"):
-            for step in result["reasoning"]["reasoning_steps"]:
+            reasoning = result.get("reasoning", {})
+            reasoning_steps = reasoning.get("reasoning_steps", ["Processing your request..."])
+            for step in reasoning_steps:
                 st.write(f"• {step}")
         
         return result["result"]
@@ -863,13 +854,14 @@ st.write(
 
 # Show pending action status if any - with safe attribute checking
 if "react_agent" in st.session_state:
-    # Check if the agent has the pending_action attribute
     agent = st.session_state.react_agent
+    # Safe attribute check
     if hasattr(agent, 'pending_action') and agent.pending_action:
         pending_action = agent.pending_action
         action_descriptions = {
             "weather_location": "📍 Waiting for city name for weather information",
             "vaccine_type": "💉 Waiting for vaccine type for reminder",
+            "timing": "⏰ Waiting for timing for reminder",
             "feed_parameters": "💰 Waiting for feed calculation parameters"
         }
         st.markdown(f'<div class="pending-action">{action_descriptions.get(pending_action, "Waiting for your input")}</div>', 
@@ -910,9 +902,8 @@ try:
             st.session_state.faiss_loaded = True
             st.session_state._qa_chain = qa_chain
             
-            # Initialize ReAct agent - always create fresh instance
+            # Always create fresh agent instance to ensure new attributes
             st.session_state.react_agent = ReActPoultryAgent(qa_chain)
-            st.session_state.agent_initialized = True
 except Exception as e:
     st.error(f"Sorry, I'm having trouble loading my knowledge base: {e}")
     st.stop()
@@ -991,8 +982,9 @@ if st.button("🧹 Clear Conversation"):
     if "suggestions" in st.session_state:
         del st.session_state.suggestions
     if "react_agent" in st.session_state:
-        # Reset agent state but keep the instance
+        # Reset agent state
         st.session_state.react_agent.pending_action = None
         st.session_state.react_agent.pending_intent = None
+        st.session_state.react_agent.pending_parameters = {}
         st.session_state.react_agent.entity_memory = {}
     st.rerun()
