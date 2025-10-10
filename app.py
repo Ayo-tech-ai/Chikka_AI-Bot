@@ -898,6 +898,10 @@ if "react_agent" in st.session_state:
 # Chat Interface
 # -------------------------
 
+# -------------------------
+# Chat Interface
+# -------------------------
+
 st.markdown("<div class='chat-container'>", unsafe_allow_html=True)
 
 # Display chat history
@@ -931,22 +935,22 @@ st.markdown("</div>", unsafe_allow_html=True)
 with st.container():
     st.markdown("<div class='fixed-input-container'>", unsafe_allow_html=True)
     
-    with st.form("chat_input", clear_on_submit=True):
-        cols = st.columns([1, 8, 1])  # Clear, Input, Send
-        
-        with cols[0]:
-            clear_chat = st.button("🧹", help="Clear conversation", key="clear_chat_btn")
-        
-        with cols[1]:
-            user_input = st.text_input(
-                "Ask Chikka...", 
-                key="user_input", 
-                label_visibility="collapsed",
-                placeholder="Ask me about broiler farming..."
-            )
-        
-        with cols[2]:
-            submitted = st.form_submit_button("Send")
+    # Use columns for layout without form
+    cols = st.columns([1, 8, 1])  # Clear, Input, Send
+    
+    with cols[0]:
+        clear_chat = st.button("🧹", help="Clear conversation", key="clear_chat_btn")
+    
+    with cols[1]:
+        user_input = st.text_input(
+            "Ask Chikka...", 
+            key="user_input", 
+            label_visibility="collapsed",
+            placeholder="Ask me about broiler farming..."
+        )
+    
+    with cols[2]:
+        send_button = st.button("Send", key="send_btn", use_container_width=True)
     
     st.markdown("<div class='footer-text'>🐔 Chikka AI — Powered by 9jaAI_Farmer</div>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
@@ -964,7 +968,7 @@ if clear_chat:
         st.session_state.react_agent.entity_memory = {}
     st.rerun()
 
-if submitted and user_input.strip():
+if send_button and user_input.strip():
     q = user_input.strip()
 
     if st.session_state.history:
