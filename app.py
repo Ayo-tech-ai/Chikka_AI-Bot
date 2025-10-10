@@ -912,16 +912,6 @@ with chat_box:
 
 st.markdown('<div class="input-container">', unsafe_allow_html=True)
 
-# Suggestions (if any)
-if "suggestions" in st.session_state and st.session_state.suggestions:
-    st.markdown("**You might want to ask:**")
-    cols = st.columns(2)
-    for i, suggestion in enumerate(st.session_state.suggestions[:4]):
-        with cols[i % 2]:
-            if st.button(suggestion, key=f"sugg_{i}", use_container_width=True):
-                st.session_state.query_input = suggestion
-                st.session_state.auto_submit = True
-
 # Input form at the bottom
 with st.form(key="query_form", clear_on_submit=True):
     user_query = st.text_input(
@@ -935,7 +925,38 @@ if "auto_submit" in st.session_state and st.session_state.auto_submit:
     submitted = True
     st.session_state.auto_submit = False
 
+# Suggestions (if any) - BELOW the input, just 1 suggestion
+if "suggestions" in st.session_state and st.session_state.suggestions:
+    st.markdown("**You might want to ask:**")
+    # Show only the first suggestion
+    if st.button(st.session_state.suggestions[0], key="sugg_0", use_container_width=True):
+        st.session_state.query_input = st.session_state.suggestions[0]
+        st.session_state.auto_submit = True
+        st.rerun()
+
 st.markdown('</div>', unsafe_allow_html=True)
+
+# Clear Conversation button
+if st.button("🧹 Clear Conversation", use_container_width=True):
+    st.session_state.history = []
+    st.session_state.conversation_context = ""
+    if "suggestions" in st.session_state:
+        del st.session_state.suggestions
+    if "react_agent" in st.session_state:
+        # Reset agent state
+        st.session_state.react_agent.pending_action = None
+        st.session_state.react_agent.pending_intent = None
+        st.session_state.react_agent.pending_parameters = {}
+        st.session_state.react_agent.entity_memory = {}
+    st.rerun()
+
+# -------------------------
+# Footer
+# -------------------------
+
+st.write("")
+st.caption("💡 Conversation history is temporary and will clear when you refresh the page.")
+st.caption("Powered by 9jaAI_Farmer")
 
 # -------------------------
 # Load FAISS & LLM lazily (only once)
@@ -987,24 +1008,4 @@ if submitted and user_query and user_query.strip():
     )
     
     st.session_state.suggestions = generate_suggestions(q, answer_text)
-    st.rerun()
-
-# -------------------------
-# Footer
-# -------------------------
-
-st.write("")
-st.caption("💡 Conversation history is temporary and will clear when you refresh the page.")
-
-if st.button("🧹 Clear Conversation"):
-    st.session_state.history = []
-    st.session_state.conversation_context = ""
-    if "suggestions" in st.session_state:
-        del st.session_state.suggestions
-    if "react_agent" in st.session_state:
-        # Reset agent state
-        st.session_state.react_agent.pending_action = None
-        st.session_state.react_agent.pending_intent = None
-        st.session_state.react_agent.pending_parameters = {}
-        st.session_state.react_agent.entity_memory = {}
     st.rerun()
