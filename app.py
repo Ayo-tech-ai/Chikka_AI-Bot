@@ -411,34 +411,21 @@ class ReActPoultryAgent:
 
 st.set_page_config(page_title="Chikka AI Assistant", layout="centered")
 
-# Updated CSS for improved chat interface
+# Updated CSS for ChatGPT-style fixed input
 st.markdown(
     """
     <style>
-    # Fixed input section (always visible)
-    with st.container():
-        st.markdown("<div class='fixed-input-container'>", unsafe_allow_html=True)
-    
-    # Use columns for layout without form
-        cols = st.columns([1, 8, 1])  # Clear, Input, Send
-    
-        with cols[0]:
-            clear_chat = st.button("🧹", help="Clear conversation", key="clear_chat_btn")
-    
-        with cols[1]:
-            user_input = st.text_input(
-                "Ask Chikka...", 
-                key="user_input", 
-                label_visibility="collapsed",
-                placeholder="Ask me about broiler farming..."
-        )
-    
-        with cols[2]:
-            send_button = st.button("Send", key="send_btn", use_container_width=True)
-    
-        st.markdown("<div class='footer-text'>🐔 Chikka AI — Powered by 9jaAI_Farmer</div>", unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
- 
+    .chat-container {
+        max-height: 65vh;
+        overflow-y: auto;
+        padding: 8px;
+        border-radius: 8px;
+        border: 1px solid #eee;
+        background: #fafafa;
+        display: flex;
+        flex-direction: column;
+        margin-bottom: 100px; /* Space for fixed input */
+    }
     .msg {
         padding: 12px 16px;
         border-radius: 12px;
@@ -512,24 +499,47 @@ st.markdown(
         left: 0;
         right: 0;
         background: white;
-        padding: 15px 20px;
+        padding: 20px;
         border-top: 1px solid #e0e0e0;
         z-index: 1000;
         box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
     }
     /* Main content padding to prevent overlap */
     .main .block-container {
-        padding-bottom: 180px !important; /* More padding for fixed input */
+        padding-bottom: 150px !important;
     }
     .footer-text {
         text-align: center;
         color: #666;
         font-size: 12px;
-        margin-top: 8px;
+        margin-top: 5px;
     }
-    .thinking-message {
+    /* Input row with clear and send buttons */
+    .input-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        max-width: 800px;
+        margin: 0 auto;
+    }
+    .clear-icon {
+        background: none;
+        border: none;
+        font-size: 20px;
+        cursor: pointer;
+        padding: 8px;
+        border-radius: 50%;
+        transition: background-color 0.2s;
         color: #666;
-        font-style: italic;
+    }
+    .clear-icon:hover {
+        background-color: #f5f5f5;
+    }
+    .input-field {
+        flex: 1;
+    }
+    .send-button {
+        white-space: nowrap;
     }
     </style>
     """,
@@ -550,6 +560,17 @@ st.markdown(
     // Scroll when page loads and when new content is added
     window.addEventListener('load', scrollToBottom);
     document.addEventListener('DOMNodeInserted', scrollToBottom);
+    
+    // Ensure fixed input stays properly positioned
+    function updateInputPosition() {
+        const inputContainer = document.querySelector('.fixed-input-container');
+        if (inputContainer) {
+            inputContainer.style.left = '0';
+            inputContainer.style.right = '0';
+        }
+    }
+    window.addEventListener('resize', updateInputPosition);
+    updateInputPosition();
     </script>
     """,
     unsafe_allow_html=True,
@@ -908,105 +929,75 @@ if "react_agent" in st.session_state:
                     unsafe_allow_html=True)
 
 # -------------------------
-# Chat Interface
+# Conversation History Display
 # -------------------------
 
-# -------------------------
-# Chat Interface
-# -------------------------
+st.markdown("### Conversation")
+chat_box = st.container()
 
-st.markdown("<div class='chat-container'>", unsafe_allow_html=True)
+with chat_box:
+    st.markdown('<div class="chat-container">', unsafe_allow_html=True)
+    if not st.session_state.history:
+        st.markdown("<p style='color: #888; text-align: center; padding: 20px;'>No messages yet. Ask me anything about broiler farming!</p>", unsafe_allow_html=True)
+    else:
+        # Display messages in chronological order (top to bottom)
+        for msg in st.session_state.history:
+            role = msg.get("role", "User")
+            content = msg.get("content", "")
+            timestamp = msg.get("time", "")
+            css_class = "user" if role == "User" else "bot"
+            avatar = "👤" if role == "User" else "🐔"
+            label = f"{avatar} {role}"
 
-# Display chat history
-if not st.session_state.history:
-    st.markdown("<p style='color: #888; text-align: center; padding: 20px;'>No messages yet. Ask me anything about broiler farming!</p>", unsafe_allow_html=True)
-else:
-    for msg in st.session_state.history:
-        role_class = "user" if msg["role"] == "User" else "bot"
-        avatar = "👤" if msg["role"] == "User" else "🐔"
-        label = f"{avatar} {msg['role']}"
-        
-        # Special styling for thinking messages
-        content = msg["content"]
-        if msg.get("is_thinking"):
-            content = f"<div class='thinking-message'>{content}</div>"
-
-        st.markdown(
-            f"""
-            <div class='msg {role_class}'>
-                <div class='role'>{label}</div>
-                <div>{content}</div>
-                <div class='timestamp'>{msg.get('time', '')}</div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-
-st.markdown("</div>", unsafe_allow_html=True)
-
-# Fixed input section (always visible)
-with st.container():
-    st.markdown("<div class='fixed-input-container'>", unsafe_allow_html=True)
-    
-    # Use columns for layout without form
-    cols = st.columns([1, 8, 1])  # Clear, Input, Send
-    
-    with cols[0]:
-        clear_chat = st.button("🧹", help="Clear conversation", key="clear_chat_btn")
-    
-    with cols[1]:
-        user_input = st.text_input(
-            "Ask Chikka...", 
-            key="user_input", 
-            label_visibility="collapsed",
-            placeholder="Ask me about broiler farming..."
-        )
-    
-    with cols[2]:
-        send_button = st.button("Send", key="send_btn", use_container_width=True)
-    
-    st.markdown("<div class='footer-text'>🐔 Chikka AI — Powered by 9jaAI_Farmer</div>", unsafe_allow_html=True)
+            st.markdown(f"""  
+                <div class="msg {css_class}">  
+                    <div class="role">{label}</div>  
+                    <div>{content}</div>  
+                    <div class="timestamp">{timestamp}</div>  
+                </div>  
+            """, unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
-# Handle input
-if clear_chat:
-    st.session_state.history = []
-    st.session_state.conversation_context = ""
-    if "suggestions" in st.session_state:
-        del st.session_state.suggestions
-    if "react_agent" in st.session_state:
-        st.session_state.react_agent.pending_action = None
-        st.session_state.react_agent.pending_intent = None
-        st.session_state.react_agent.pending_parameters = {}
-        st.session_state.react_agent.entity_memory = {}
-    st.rerun()
+# -------------------------
+# ChatGPT-style Fixed Input Section at Bottom
+# -------------------------
 
-if send_button and user_input.strip():
-    q = user_input.strip()
+st.markdown('<div class="fixed-input-container">', unsafe_allow_html=True)
 
-    if st.session_state.history:
-        recent_messages = list(reversed(st.session_state.history))[:3]
-        context_text = " ".join([msg["content"] for msg in recent_messages if msg["role"] == "User"])
-        entities = extract_key_entities(context_text)
-        if entities:
-            st.session_state.conversation_context = f"We've been discussing: {', '.join(entities)}"
+# Input row with clear icon and send button
+col1, col2, col3 = st.columns([0.1, 0.8, 0.1])
 
-    # Add user message
-    st.session_state.history.append({
-        "role": "User", 
-        "content": q, 
-        "time": get_local_time()
-    })
+with col1:
+    # Clear conversation icon
+    if st.button("🧹", key="clear_icon", help="Clear conversation"):
+        st.session_state.history = []
+        st.session_state.conversation_context = ""
+        if "suggestions" in st.session_state:
+            del st.session_state.suggestions
+        if "react_agent" in st.session_state:
+            # Reset agent state
+            st.session_state.react_agent.pending_action = None
+            st.session_state.react_agent.pending_intent = None
+            st.session_state.react_agent.pending_parameters = {}
+            st.session_state.react_agent.entity_memory = {}
+        st.rerun()
 
-    # Add thinking message
-    st.session_state.history.append({
-        "role": "ChikkaBot", 
-        "content": "⏳ Thinking...", 
-        "time": get_local_time(), 
-        "is_thinking": True
-    })
-    
-    st.rerun()
+with col2:
+    # Input form
+    with st.form(key="query_form", clear_on_submit=True):
+        user_query = st.text_input(
+            "Ask me about broilers:",
+            key="query_input",
+            placeholder="What would you like to know about broiler farming?",
+            label_visibility="collapsed"
+        )
+        submitted = st.form_submit_button("Send")
+
+with col3:
+    # Empty column for balance
+    st.write("")
+
+st.markdown('</div>', unsafe_allow_html=True)
 
 # -------------------------
 # Load FAISS & LLM lazily (only once)
@@ -1031,28 +1022,32 @@ except Exception as e:
 qa_chain = st.session_state._qa_chain
 
 # -------------------------
-# Handle thinking message replacement
+# Handle a new submission
 # -------------------------
 
-# After rerun, process the query and replace the thinking message
-if (st.session_state.history and 
-    len(st.session_state.history) > 0 and 
-    st.session_state.history[-1].get("is_thinking")):
-    
-    # Get the last user query (second to last message)
-    last_user_msg = st.session_state.history[-2] if len(st.session_state.history) >= 2 else None
-    if last_user_msg and last_user_msg["role"] == "User":
-        q = last_user_msg["content"]
-        
-        # Process the query
+if submitted and user_query and user_query.strip():
+    q = user_query.strip()
+
+    if st.session_state.history:
+        recent_messages = list(reversed(st.session_state.history))[:3]
+        context_text = " ".join([msg["content"] for msg in recent_messages if msg["role"] == "User"])
+        entities = extract_key_entities(context_text)
+        if entities:
+            st.session_state.conversation_context = f"We've been discussing: {', '.join(entities)}"
+
+    # Use GMT+1 timezone
+    st.session_state.history.append(
+        {"role": "User", "content": q, "time": get_local_time()}
+    )
+
+    placeholder = st.empty()
+    with st.spinner("Thinking about your question..."):
         answer_text = handle_query(q, qa_chain, st.session_state.conversation_context)
-        
-        # Replace the thinking message with the actual response
-        st.session_state.history[-1] = {
-            "role": "ChikkaBot", 
-            "content": answer_text, 
-            "time": get_local_time()
-        }
-        
-        st.session_state.suggestions = generate_suggestions(q, answer_text)
-        st.rerun()
+    placeholder.empty()
+
+    st.session_state.history.append(
+        {"role": "ChikkaBot", "content": answer_text, "time": get_local_time()}
+    )
+    
+    st.session_state.suggestions = generate_suggestions(q, answer_text)
+    st.rerun()
