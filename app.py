@@ -415,17 +415,30 @@ st.set_page_config(page_title="Chikka AI Assistant", layout="centered")
 st.markdown(
     """
     <style>
-    .chat-container {
-        max-height: 65vh;
-        overflow-y: auto;
-        padding: 8px;
-        border-radius: 8px;
-        border: 1px solid #eee;
-        background: #fafafa;
-        display: flex;
-        flex-direction: column;
-        margin-bottom: 120px; /* More space for fixed input */
-    }
+    # Fixed input section (always visible)
+    with st.container():
+        st.markdown("<div class='fixed-input-container'>", unsafe_allow_html=True)
+    
+    # Use columns for layout without form
+        cols = st.columns([1, 8, 1])  # Clear, Input, Send
+    
+        with cols[0]:
+            clear_chat = st.button("🧹", help="Clear conversation", key="clear_chat_btn")
+    
+        with cols[1]:
+            user_input = st.text_input(
+                "Ask Chikka...", 
+                key="user_input", 
+                label_visibility="collapsed",
+                placeholder="Ask me about broiler farming..."
+        )
+    
+        with cols[2]:
+            send_button = st.button("Send", key="send_btn", use_container_width=True)
+    
+        st.markdown("<div class='footer-text'>🐔 Chikka AI — Powered by 9jaAI_Farmer</div>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+ 
     .msg {
         padding: 12px 16px;
         border-radius: 12px;
