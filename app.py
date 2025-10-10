@@ -224,7 +224,7 @@ class ReActPoultryAgent:
 
 st.set_page_config(page_title="Chikka AI Assistant", layout="centered")
 
-# Simple CSS for chat bubbles + scroll area
+# Updated CSS for chat bubbles + scroll area with auto-scroll
 st.markdown(
     """
     <style>
@@ -235,6 +235,8 @@ st.markdown(
         border-radius: 8px;
         border: 1px solid #eee;
         background: #fafafa;
+        display: flex;
+        flex-direction: column;
     }
     .msg {
         padding: 12px 16px;
@@ -294,6 +296,34 @@ st.markdown(
         font-size: 14px;
     }
     </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+# JavaScript for auto-scroll
+st.markdown(
+    """
+    <script>
+    function scrollToBottom() {
+        const container = document.querySelector('.chat-container');
+        if (container) {
+            container.scrollTop = container.scrollHeight;
+        }
+    }
+    
+    // Scroll when page loads
+    window.addEventListener('load', scrollToBottom);
+    
+    // Scroll when new messages are added
+    const observer = new MutationObserver(scrollToBottom);
+    const config = { childList: true, subtree: true };
+    window.addEventListener('load', function() {
+        const container = document.querySelector('.chat-container');
+        if (container) {
+            observer.observe(container, config);
+        }
+    });
+    </script>
     """,
     unsafe_allow_html=True,
 )
@@ -759,7 +789,7 @@ if submitted and user_query and user_query.strip():
     st.session_state.suggestions = generate_suggestions(q, answer_text)
 
 # -------------------------
-# Chat history display
+# Chat history display (UPDATED: Top to bottom order)
 # -------------------------
 
 st.markdown("### Conversation")
@@ -770,7 +800,8 @@ with chat_box:
     if not st.session_state.history:
         st.markdown("<p style='color: #888; text-align: center;'>No messages yet. Ask me anything about broiler farming!</p>", unsafe_allow_html=True)
     else:
-        for msg in reversed(st.session_state.history):
+        # Display messages in chronological order (top to bottom)
+        for msg in st.session_state.history:
             role = msg.get("role", "User")
             content = msg.get("content", "")
             timestamp = msg.get("time", "")
@@ -800,4 +831,3 @@ if st.button("🧹 Clear Conversation"):
     if "suggestions" in st.session_state:
         del st.session_state.suggestions
     st.rerun()
-        
