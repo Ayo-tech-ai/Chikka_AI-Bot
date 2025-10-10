@@ -400,7 +400,7 @@ st.markdown(
     """
     <style>
     .chat-container {
-        max-height: 560px;
+        max-height: 400px;
         overflow-y: auto;
         padding: 8px;
         border-radius: 8px;
@@ -408,6 +408,7 @@ st.markdown(
         background: #fafafa;
         display: flex;
         flex-direction: column;
+        margin-bottom: 20px;
     }
     .msg {
         padding: 12px 16px;
@@ -474,6 +475,14 @@ st.markdown(
         margin: 5px 0;
         font-size: 12px;
         color: #856404;
+    }
+    .input-container {
+        position: sticky;
+        bottom: 0;
+        background: white;
+        padding: 10px 0;
+        border-top: 1px solid #e0e0e0;
+        margin-top: 20px;
     }
     </style>
     """,
@@ -843,7 +852,7 @@ def handle_query(query: str, qa_chain, context: str = ""):
         return ask_qa_chain(qa_chain, query, context)
 
 # -------------------------
-# App header & Input form
+# App header & Introduction
 # -------------------------
 
 st.title("🐔 Chikka AI")
@@ -867,8 +876,45 @@ if "react_agent" in st.session_state:
         st.markdown(f'<div class="pending-action">{action_descriptions.get(pending_action, "Waiting for your input")}</div>', 
                     unsafe_allow_html=True)
 
+# -------------------------
+# Conversation History Display
+# -------------------------
+
+st.markdown("### Conversation")
+chat_box = st.container()
+
+with chat_box:
+    st.markdown('<div class="chat-container">', unsafe_allow_html=True)
+    if not st.session_state.history:
+        st.markdown("<p style='color: #888; text-align: center; padding: 20px;'>No messages yet. Ask me anything about broiler farming!</p>", unsafe_allow_html=True)
+    else:
+        # Display messages in chronological order (top to bottom)
+        for msg in st.session_state.history:
+            role = msg.get("role", "User")
+            content = msg.get("content", "")
+            timestamp = msg.get("time", "")
+            css_class = "user" if role == "User" else "bot"
+            avatar = "👤" if role == "User" else "🐔"
+            label = f"{avatar} {role}"
+
+            st.markdown(f"""  
+                <div class="msg {css_class}">  
+                    <div class="role">{label}</div>  
+                    <div>{content}</div>  
+                    <div class="timestamp">{timestamp}</div>  
+                </div>  
+            """, unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+# -------------------------
+# Input Section at Bottom
+# -------------------------
+
+st.markdown('<div class="input-container">', unsafe_allow_html=True)
+
+# Suggestions (if any)
 if "suggestions" in st.session_state and st.session_state.suggestions:
-    st.markdown("You might want to ask:")
+    st.markdown("**You might want to ask:**")
     cols = st.columns(2)
     for i, suggestion in enumerate(st.session_state.suggestions[:4]):
         with cols[i % 2]:
@@ -876,6 +922,7 @@ if "suggestions" in st.session_state and st.session_state.suggestions:
                 st.session_state.query_input = suggestion
                 st.session_state.auto_submit = True
 
+# Input form at the bottom
 with st.form(key="query_form", clear_on_submit=True):
     user_query = st.text_input(
         "Ask me about broilers:",
@@ -887,6 +934,8 @@ with st.form(key="query_form", clear_on_submit=True):
 if "auto_submit" in st.session_state and st.session_state.auto_submit:
     submitted = True
     st.session_state.auto_submit = False
+
+st.markdown('</div>', unsafe_allow_html=True)
 
 # -------------------------
 # Load FAISS & LLM lazily (only once)
@@ -938,36 +987,7 @@ if submitted and user_query and user_query.strip():
     )
     
     st.session_state.suggestions = generate_suggestions(q, answer_text)
-
-# -------------------------
-# Chat history display (Top to bottom order)
-# -------------------------
-
-st.markdown("### Conversation")
-chat_box = st.container()
-
-with chat_box:
-    st.markdown('<div class="chat-container">', unsafe_allow_html=True)
-    if not st.session_state.history:
-        st.markdown("<p style='color: #888; text-align: center;'>No messages yet. Ask me anything about broiler farming!</p>", unsafe_allow_html=True)
-    else:
-        # Display messages in chronological order (top to bottom)
-        for msg in st.session_state.history:
-            role = msg.get("role", "User")
-            content = msg.get("content", "")
-            timestamp = msg.get("time", "")
-            css_class = "user" if role == "User" else "bot"
-            avatar = "👤" if role == "User" else "🐔"
-            label = f"{avatar} {role}"
-
-            st.markdown(f"""  
-                <div class="msg {css_class}">  
-                    <div class="role">{label}</div>  
-                    <div>{content}</div>  
-                    <div class="timestamp">{timestamp}</div>  
-                </div>  
-            """, unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
+    st.rerun()
 
 # -------------------------
 # Footer
