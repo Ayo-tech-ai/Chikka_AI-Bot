@@ -395,7 +395,7 @@ class ReActPoultryAgent:
 
 st.set_page_config(page_title="Chikka AI Assistant", layout="centered")
 
-# Updated CSS for chat bubbles + scroll area with auto-scroll
+# Updated CSS for chat bubbles + scroll area with auto-scroll and sticky input
 st.markdown(
     """
     <style>
@@ -483,13 +483,18 @@ st.markdown(
         padding: 10px 0;
         border-top: 1px solid #e0e0e0;
         margin-top: 20px;
+        z-index: 100;
+    }
+    /* Ensure the main content area has proper spacing */
+    .main .block-container {
+        padding-bottom: 200px;
     }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-# JavaScript for auto-scroll
+# JavaScript for auto-scroll - enhanced to scroll conversation area
 st.markdown(
     """
     <script>
@@ -512,23 +517,16 @@ st.markdown(
             observer.observe(container, config);
         }
     });
+    
+    // Also scroll when the page updates (for Streamlit)
+    function handleStreamlitEvent() {
+        scrollToBottom();
+    }
+    document.addEventListener('DOMNodeInserted', handleStreamlitEvent);
     </script>
     """,
     unsafe_allow_html=True,
 )
-
-# -------------------------
-# Session state init
-# -------------------------
-
-if "history" not in st.session_state:
-    st.session_state.history: List[Dict[str, str]] = []
-
-if "faiss_loaded" not in st.session_state:
-    st.session_state.faiss_loaded = False
-
-if "conversation_context" not in st.session_state:
-    st.session_state.conversation_context = ""
 
 # -------------------------
 # Backend helpers (cached)
