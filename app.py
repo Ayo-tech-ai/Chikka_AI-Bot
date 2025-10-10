@@ -935,6 +935,7 @@ if "react_agent" in st.session_state:
 st.markdown("### Conversation")
 chat_box = st.container()
 
+# In the conversation display section:
 with chat_box:
     st.markdown('<div class="chat-container">', unsafe_allow_html=True)
     if not st.session_state.history:
@@ -945,9 +946,14 @@ with chat_box:
             role = msg.get("role", "User")
             content = msg.get("content", "")
             timestamp = msg.get("time", "")
+            is_thinking = msg.get("is_thinking", False)
             css_class = "user" if role == "User" else "bot"
             avatar = "👤" if role == "User" else "🐔"
             label = f"{avatar} {role}"
+
+            # Special styling for thinking messages
+            if is_thinking:
+                content = f"<div style='color: #666; font-style: italic;'>{content}</div>"
 
             st.markdown(f"""  
                 <div class="msg {css_class}">  
@@ -1040,14 +1046,34 @@ if submitted and user_query and user_query.strip():
         {"role": "User", "content": q, "time": get_local_time()}
     )
 
-    placeholder = st.empty()
-    with st.spinner("Thinking about your question..."):
-        answer_text = handle_query(q, qa_chain, st.session_state.conversation_context)
-    placeholder.empty()
-
+    # Add a temporary "thinking" message instead of using st.spinner()
+    thinking_id = len(st.session_state.history)
     st.session_state.history.append(
-        {"role": "ChikkaBot", "content": answer_text, "time": get_local_time()}
+        {"role": "ChikkaBot", "content": "⏳ Thinking...", "time": get_local_time(), "is_thinking": True}
     )
     
-    st.session_state.suggestions = generate_suggestions(q, answer_text)
+    # Rerun to show the thinking message immediately
     st.rerun()
+
+# After rerun, process the query and replace the thinking message
+if (st.session_state.history and 
+    len(st.session_state.history) > 0 and 
+    st.session_state.history[-1].get("is_thinking")):
+    
+    # Get the last user query (second to last message)
+    last_user_msg = st.session_state.history[-2] if len(st.session_state.history) >= 2 else None
+    if last_user_msg and last_user_msg["role"] == "User":
+        q = last_user_msg["content"]
+        
+        # Process the query
+        answer_text = handle_query(q, qa_chain, st.session_state.conversation_context)
+        
+        # Replace the thinking message with the actual response
+        st.session_state.history[-1] = {
+            "role": "ChikkaBot", 
+            "content": answer_text, 
+            "time": get_local_time()
+        }
+        
+        st.session_state.suggestions = generate_suggestions(q, answer_text)
+        st.rerun()
