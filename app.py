@@ -13,6 +13,19 @@ from tools.calculator import calculate_feed_cost
 from tools.reminder import create_vaccination_reminder
 
 # -------------------------
+# Session state init - MOVED TO THE VERY TOP
+# -------------------------
+
+if "history" not in st.session_state:
+    st.session_state.history: List[Dict[str, str]] = []
+
+if "faiss_loaded" not in st.session_state:
+    st.session_state.faiss_loaded = False
+
+if "conversation_context" not in st.session_state:
+    st.session_state.conversation_context = ""
+
+# -------------------------
 # ReAct Agent Class with Enhanced State Management
 # -------------------------
 
