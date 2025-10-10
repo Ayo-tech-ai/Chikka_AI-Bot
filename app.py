@@ -192,11 +192,19 @@ class ReActPoultryAgent:
         
         elif tool_plan["primary_action"] == "create_reminder":
             vaccine_type, date_info, bird_count = extract_reminder_parameters(query)
+            # Fallback to what's in entity memory if not explicitly present in current query
+            if (not vaccine_type or vaccine_type == "Poultry Vaccine") and "vaccine_type" in self.entity_memory:
+                vaccine_type = self.entity_memory.get("vaccine_type")
+            if (not vaccine_type or vaccine_type == "Poultry Vaccine") and "disease" in self.entity_memory:
+                vaccine_type = self.entity_memory.get("disease")
+            if not bird_count and "bird_count" in self.entity_memory:
+                bird_count = self.entity_memory.get("bird_count")
+
             if vaccine_type and date_info:
                 return create_vaccination_reminder(vaccine_type, date_info, bird_count)
             else:
                 return "I can help set vaccination reminders! Please specify the vaccine type and when. Example: 'Remind me to vaccinate for Newcastle next Monday'"
-        
+
         else:  # provide_advice - use your existing RAG
             return ask_qa_chain(self.qa_chain, query, context)
     
@@ -651,11 +659,20 @@ def handle_query(query: str, qa_chain, context: str = ""):
 
     if has_clear_reminder_intent:
         vaccine_type, date_info, bird_count = extract_reminder_parameters(query)
+
+        # Memory fallback if available (for the non-ReAct path)
+        if (not vaccine_type or vaccine_type == "Poultry Vaccine") and "react_agent" in st.session_state:
+            mem = st.session_state.react_agent.entity_memory
+            vaccine_type = mem.get("vaccine_type") or mem.get("disease") or vaccine_type
+            if not bird_count:
+                bird_count = mem.get("bird_count")
+
         if vaccine_type and date_info:
             return create_vaccination_reminder(vaccine_type, date_info, bird_count)
         else:
             return "I can help set vaccination reminders! Please specify the vaccine type and date. Example: 'Remind me to vaccinate for Newcastle disease next Monday'"
         return ask_qa_chain(qa_chain, query, context)
+
 
 # -------------------------
 # App header & Input form
@@ -718,14 +735,15 @@ if submitted and user_query and user_query.strip():
     q = user_query.strip()
 
     if st.session_state.history:
-        recent_messages = st.session_state.history[:3]
+        # use the most recent messages but keep natural top-down order
+        recent_messages = list(reversed(st.session_state.history))[:3]
         context_text = " ".join([msg["content"] for msg in recent_messages if msg["role"] == "User"])
         entities = extract_key_entities(context_text)
         if entities:
             st.session_state.conversation_context = f"We've been discussing: {', '.join(entities)}"
 
-    st.session_state.history.insert(
-        0,
+
+    st.session_state.history.append(
         {"role": "User", "content": q, "time": datetime.datetime.now().strftime("%H:%M")}
     )
 
@@ -734,8 +752,7 @@ if submitted and user_query and user_query.strip():
         answer_text = handle_query(q, qa_chain, st.session_state.conversation_context)
     placeholder.empty()
 
-    st.session_state.history.insert(
-        0,
+    st.session_state.history.append(
         {"role": "ChikkaBot", "content": answer_text, "time": datetime.datetime.now().strftime("%H:%M")}
     )
     
@@ -753,7 +770,7 @@ with chat_box:
     if not st.session_state.history:
         st.markdown("<p style='color: #888; text-align: center;'>No messages yet. Ask me anything about broiler farming!</p>", unsafe_allow_html=True)
     else:
-        for msg in st.session_state.history:
+        for msg in reversed(st.session_state.history):
             role = msg.get("role", "User")
             content = msg.get("content", "")
             timestamp = msg.get("time", "")
