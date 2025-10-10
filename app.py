@@ -411,7 +411,7 @@ class ReActPoultryAgent:
 
 st.set_page_config(page_title="Chikka AI Assistant", layout="centered")
 
-# Updated CSS for ChatGPT-style fixed input
+# Updated CSS for improved chat interface
 st.markdown(
     """
     <style>
@@ -424,7 +424,7 @@ st.markdown(
         background: #fafafa;
         display: flex;
         flex-direction: column;
-        margin-bottom: 125px; /* Space for fixed input */
+        margin-bottom: 120px; /* More space for fixed input */
     }
     .msg {
         padding: 12px 16px;
@@ -499,47 +499,20 @@ st.markdown(
         left: 0;
         right: 0;
         background: white;
-        padding: 20px;
+        padding: 15px 20px;
         border-top: 1px solid #e0e0e0;
         z-index: 1000;
         box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
     }
     /* Main content padding to prevent overlap */
     .main .block-container {
-        padding-bottom: 150px !important;
+        padding-bottom: 180px !important; /* More padding for fixed input */
     }
     .footer-text {
         text-align: center;
         color: #666;
         font-size: 12px;
-        margin-top: 5px;
-    }
-    /* Input row with clear and send buttons */
-    .input-row {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        max-width: 800px;
-        margin: 0 auto;
-    }
-    .clear-icon {
-        background: none;
-        border: none;
-        font-size: 20px;
-        cursor: pointer;
-        padding: 8px;
-        border-radius: 50%;
-        transition: background-color 0.2s;
-        color: #666;
-    }
-    .clear-icon:hover {
-        background-color: #f5f5f5;
-    }
-    .input-field {
-        flex: 1;
-    }
-    .send-button {
-        white-space: nowrap;
+        margin-top: 8px;
     }
     .thinking-message {
         color: #666;
@@ -550,7 +523,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# JavaScript for auto-scroll and auto-focus
+# JavaScript for auto-scroll
 st.markdown(
     """
     <script>
@@ -564,23 +537,6 @@ st.markdown(
     // Scroll when page loads and when new content is added
     window.addEventListener('load', scrollToBottom);
     document.addEventListener('DOMNodeInserted', scrollToBottom);
-    
-    // Auto-focus input field
-    window.addEventListener('load', function() {
-        const input = window.parent.document.querySelector('input[data-testid="textInput"]');
-        if (input) input.focus();
-    });
-    
-    // Ensure fixed input stays properly positioned
-    function updateInputPosition() {
-        const inputContainer = document.querySelector('.fixed-input-container');
-        if (inputContainer) {
-            inputContainer.style.left = '0';
-            inputContainer.style.right = '0';
-        }
-    }
-    window.addEventListener('resize', updateInputPosition);
-    updateInputPosition();
     </script>
     """,
     unsafe_allow_html=True,
