@@ -6,6 +6,7 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from typing import List, Dict
 import datetime
 import re
+from datetime import timezone, timedelta
 
 # Import tools
 from tools.weather import get_weather
@@ -13,7 +14,7 @@ from tools.calculator import calculate_feed_cost
 from tools.reminder import create_vaccination_reminder
 
 # -------------------------
-# Session state init - MOVED TO THE VERY TOP
+# Session state init
 # -------------------------
 
 if "history" not in st.session_state:
@@ -112,25 +113,23 @@ class ReActPoultryAgent:
         query_lower = query.lower().strip()
         
         # For weather location - short responses likely location names
-        if self.pending_action == "weather_location":
-            return (len(query_lower.split()) <= 3 and 
-                    not any(word in query_lower for word in ['weather', 'temperature', 'rain']))
+        if self.pending_action == "weather_location" and len(query_lower.split()) <= 3:
+            return True
             
         # For vaccine type - specific vaccine names or short responses
-        if self.pending_action == "vaccine_type":
-            vaccine_terms = ['newcastle', 'gumboro', 'coccidiosis', 'marek', 'ibd']
-            return (any(vaccine in query_lower for vaccine in vaccine_terms) or 
-                    len(query_lower.split()) <= 2)
+        if self.pending_action == "vaccine_type" and any(vaccine in query_lower for vaccine in 
+                                                       ['newcastle', 'gumboro', 'coccidiosis', 'marek', 'ibd']):
+            return True
             
         # For feed parameters - contains numbers
-        if self.pending_action == "feed_parameters":
-            return bool(re.search(r'\d+', query))
+        if self.pending_action == "feed_parameters" and re.search(r'\d+', query):
+            return True
             
         # For timing - time-related words
-        if self.pending_action == "timing":
-            time_terms = ['tomorrow', 'monday', 'tuesday', 'wednesday', 'thursday', 
-                         'friday', 'saturday', 'sunday', 'next week', 'next month']
-            return any(term in query_lower for term in time_terms)
+        if self.pending_action == "timing" and any(term in query_lower for term in 
+                                                  ['tomorrow', 'monday', 'tuesday', 'wednesday', 'thursday', 
+                                                   'friday', 'saturday', 'sunday', 'next week', 'next month']):
+            return True
             
         return False
     
@@ -142,6 +141,7 @@ class ReActPoultryAgent:
         
         try:
             if original_action == "weather_location":
+                # User provided location for weather
                 city = query.strip()
                 if city:
                     self.entity_memory["location"] = city
@@ -152,6 +152,7 @@ class ReActPoultryAgent:
                     result = "I still need to know which city you want weather information for."
             
             elif original_action == "vaccine_type":
+                # User provided vaccine type for reminder
                 vaccine_type = self._extract_vaccine_type(query)
                 if vaccine_type:
                     self.entity_memory["vaccine_type"] = vaccine_type
@@ -168,6 +169,7 @@ class ReActPoultryAgent:
                     result = "I still need to know which vaccine you want me to remind you about."
             
             elif original_action == "timing":
+                # User provided timing for reminder
                 date_info = self._extract_timing(query)
                 if date_info:
                     self.pending_parameters["timing"] = date_info
@@ -182,6 +184,7 @@ class ReActPoultryAgent:
                     result = "I still need to know when to set the reminder for."
             
             elif original_action == "feed_parameters":
+                # Try to extract feed parameters from the response
                 num_birds, feed_per_bird, price_per_kg = extract_feed_parameters(query)
                 if all([num_birds, feed_per_bird, price_per_kg]):
                     result = calculate_feed_cost(num_birds, feed_per_bird, price_per_kg)
@@ -413,7 +416,7 @@ st.markdown(
     """
     <style>
     .chat-container {
-        max-height: 400px;
+        max-height: 500px;
         overflow-y: auto;
         padding: 8px;
         border-radius: 8px;
@@ -421,7 +424,7 @@ st.markdown(
         background: #fafafa;
         display: flex;
         flex-direction: column;
-        margin-bottom: 20px;
+        margin-bottom: 10px;
     }
     .msg {
         padding: 12px 16px;
@@ -493,21 +496,27 @@ st.markdown(
         position: sticky;
         bottom: 0;
         background: white;
-        padding: 10px 0;
+        padding: 15px 0;
         border-top: 1px solid #e0e0e0;
-        margin-top: 20px;
+        margin-top: 10px;
         z-index: 100;
     }
     /* Ensure the main content area has proper spacing */
     .main .block-container {
-        padding-bottom: 200px;
+        padding-bottom: 150px;
+    }
+    .footer-text {
+        text-align: center;
+        color: #666;
+        font-size: 12px;
+        margin-top: 5px;
     }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-# JavaScript for auto-scroll - enhanced to scroll conversation area
+# JavaScript for auto-scroll
 st.markdown(
     """
     <script>
@@ -518,31 +527,16 @@ st.markdown(
         }
     }
     
-    // Scroll when page loads
+    // Scroll when page loads and when new content is added
     window.addEventListener('load', scrollToBottom);
-    
-    // Scroll when new messages are added
-    const observer = new MutationObserver(scrollToBottom);
-    const config = { childList: true, subtree: true };
-    window.addEventListener('load', function() {
-        const container = document.querySelector('.chat-container');
-        if (container) {
-            observer.observe(container, config);
-        }
-    });
-    
-    // Also scroll when the page updates (for Streamlit)
-    function handleStreamlitEvent() {
-        scrollToBottom();
-    }
-    document.addEventListener('DOMNodeInserted', handleStreamlitEvent);
+    document.addEventListener('DOMNodeInserted', scrollToBottom);
     </script>
     """,
     unsafe_allow_html=True,
 )
 
 # -------------------------
-# Backend helpers (cached)
+# Helper functions
 # -------------------------
 
 @st.cache_resource(show_spinner=False)
@@ -862,11 +856,17 @@ def handle_query(query: str, qa_chain, context: str = ""):
         # Fallback - should not happen with proper initialization
         return ask_qa_chain(qa_chain, query, context)
 
+def get_local_time():
+    """Get current time in GMT+1 timezone"""
+    gmt_plus_one = timezone(timedelta(hours=1))
+    return datetime.datetime.now(gmt_plus_one).strftime("%H:%M")
+
 # -------------------------
 # App header & Introduction
 # -------------------------
 
 st.title("🐔 Chikka AI")
+st.caption("Powered by 9jaAI_Farmer")
 st.write(
     "👋 Hello! I'm Chikka, your friendly assistant for backyard broiler farming. "
     "I'm here to help with practical advice on broiler care, health, and management."
@@ -932,42 +932,7 @@ with st.form(key="query_form", clear_on_submit=True):
     )
     submitted = st.form_submit_button("Send")
 
-if "auto_submit" in st.session_state and st.session_state.auto_submit:
-    submitted = True
-    st.session_state.auto_submit = False
-
-# Suggestions (if any) - BELOW the input, just 1 suggestion
-if "suggestions" in st.session_state and st.session_state.suggestions:
-    st.markdown("**You might want to ask:**")
-    # Show only the first suggestion
-    if st.button(st.session_state.suggestions[0], key="sugg_0", use_container_width=True):
-        st.session_state.query_input = st.session_state.suggestions[0]
-        st.session_state.auto_submit = True
-        st.rerun()
-
 st.markdown('</div>', unsafe_allow_html=True)
-
-# Clear Conversation button
-if st.button("🧹 Clear Conversation", use_container_width=True):
-    st.session_state.history = []
-    st.session_state.conversation_context = ""
-    if "suggestions" in st.session_state:
-        del st.session_state.suggestions
-    if "react_agent" in st.session_state:
-        # Reset agent state
-        st.session_state.react_agent.pending_action = None
-        st.session_state.react_agent.pending_intent = None
-        st.session_state.react_agent.pending_parameters = {}
-        st.session_state.react_agent.entity_memory = {}
-    st.rerun()
-
-# -------------------------
-# Footer
-# -------------------------
-
-st.write("")
-st.caption("💡 Conversation history is temporary and will clear when you refresh the page.")
-st.caption("Powered by 9jaAI_Farmer")
 
 # -------------------------
 # Load FAISS & LLM lazily (only once)
@@ -1005,8 +970,9 @@ if submitted and user_query and user_query.strip():
         if entities:
             st.session_state.conversation_context = f"We've been discussing: {', '.join(entities)}"
 
+    # Use GMT+1 timezone
     st.session_state.history.append(
-        {"role": "User", "content": q, "time": datetime.datetime.now().strftime("%H:%M")}
+        {"role": "User", "content": q, "time": get_local_time()}
     )
 
     placeholder = st.empty()
@@ -1015,7 +981,7 @@ if submitted and user_query and user_query.strip():
     placeholder.empty()
 
     st.session_state.history.append(
-        {"role": "ChikkaBot", "content": answer_text, "time": datetime.datetime.now().strftime("%H:%M")}
+        {"role": "ChikkaBot", "content": answer_text, "time": get_local_time()}
     )
     
     st.session_state.suggestions = generate_suggestions(q, answer_text)
