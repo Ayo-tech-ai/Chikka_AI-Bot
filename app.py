@@ -13,7 +13,7 @@ from tools.calculator import calculate_feed_cost
 from tools.reminder import create_vaccination_reminder
 
 # -------------------------
-# ReAct Agent Class with State Management
+# ReAct Agent Class with Enhanced State Management
 # -------------------------
 
 class ReActPoultryAgent:
@@ -24,8 +24,9 @@ class ReActPoultryAgent:
         self.last_intent = None
         self.last_topic = None
         self.entity_memory = {}
-        self.pending_action = None  # Track pending actions waiting for user input
-        self.pending_intent = None  # Track the original intent during clarification
+        self.pending_action = None
+        self.pending_intent = None
+        self.pending_parameters = {}  # Store parameters collected during multi-turn
 
     def _update_conversation_memory(self, query: str, reasoning: Dict):
         """Remember important context for ALL conversation types"""
@@ -71,17 +72,17 @@ class ReActPoultryAgent:
         self.conversation_context = ". ".join(context_parts) if context_parts else ""
     
     def process_query(self, query: str, context: str = "") -> Dict:
-        """ReAct pattern with state management for follow-up conversations"""
+        """Enhanced ReAct pattern with persistent state management"""
         
-        # Check if we have a pending action that this query might be answering
-        if self.pending_action and self._is_clarification_response(query):
-            return self._handle_clarification_response(query)
+        # STEP 1: Check if this is a follow-up to a pending action
+        if self.pending_action and self._is_follow_up_response(query):
+            return self._handle_follow_up_response(query)
         
-        # Normal reasoning for new queries
+        # STEP 2: Normal reasoning for new queries
         reasoning = self._reason_about_query(query, context)
         self.reasoning_history.append(reasoning)
         
-        # ACTING STEP
+        # STEP 3: Execute action
         action_result = self._execute_action(reasoning, query, context)
         
         return {
@@ -90,76 +91,166 @@ class ReActPoultryAgent:
             "requires_follow_up": reasoning.get("missing_info")
         }
     
-    def _is_clarification_response(self, query: str) -> bool:
-        """Check if the current query is likely answering a previous clarification request"""
+    def _is_follow_up_response(self, query: str) -> bool:
+        """Determine if the query is answering a previous clarification question"""
         if not self.pending_action:
             return False
         
-        # Simple check: if we asked for location and user provides a city name
-        if self.pending_action == "weather_location" and len(query.strip().split()) <= 3:
-            return True
+        query_lower = query.lower().strip()
+        
+        # For weather location - short responses likely location names
+        if self.pending_action == "weather_location":
+            return (len(query_lower.split()) <= 3 and 
+                    not any(word in query_lower for word in ['weather', 'temperature', 'rain']))
             
-        # If we asked for vaccine type and user provides a disease name
-        if self.pending_action == "vaccine_type" and any(vaccine in query.lower() for vaccine in 
-                                                       ['newcastle', 'gumboro', 'coccidiosis', 'marek', 'ibd']):
-            return True
+        # For vaccine type - specific vaccine names or short responses
+        if self.pending_action == "vaccine_type":
+            vaccine_terms = ['newcastle', 'gumboro', 'coccidiosis', 'marek', 'ibd']
+            return (any(vaccine in query_lower for vaccine in vaccine_terms) or 
+                    len(query_lower.split()) <= 2)
             
-        # If we asked for feed parameters and user provides numbers
-        if self.pending_action == "feed_parameters" and re.search(r'\d+', query):
-            return True
+        # For feed parameters - contains numbers
+        if self.pending_action == "feed_parameters":
+            return bool(re.search(r'\d+', query))
+            
+        # For timing - time-related words
+        if self.pending_action == "timing":
+            time_terms = ['tomorrow', 'monday', 'tuesday', 'wednesday', 'thursday', 
+                         'friday', 'saturday', 'sunday', 'next week', 'next month']
+            return any(term in query_lower for term in time_terms)
             
         return False
     
-    def _handle_clarification_response(self, query: str) -> Dict:
-        """Handle user's response to a clarification question"""
+    def _handle_follow_up_response(self, query: str) -> Dict:
+        """Process follow-up responses to complete pending actions"""
         result = ""
+        original_intent = self.pending_intent
+        original_action = self.pending_action
         
-        if self.pending_action == "weather_location":
-            # User provided location for weather
-            city = query.strip()
-            if city:
-                self.entity_memory["location"] = city
-                result = get_weather(city, "NG")
-            else:
-                result = "I still need to know which city you want weather information for."
-        
-        elif self.pending_action == "vaccine_type":
-            # User provided vaccine type for reminder
-            vaccine_type = None
-            if "newcastle" in query.lower():
-                vaccine_type = "Newcastle"
-            elif "gumboro" in query.lower():
-                vaccine_type = "Gumboro"
-            elif "coccidiosis" in query.lower():
-                vaccine_type = "Coccidiosis"
-            else:
-                vaccine_type = query.strip().title()
+        try:
+            if original_action == "weather_location":
+                city = query.strip()
+                if city:
+                    self.entity_memory["location"] = city
+                    result = get_weather(city, "NG")
+                else:
+                    result = "I still need to know which city you want weather information for."
             
-            if vaccine_type:
-                self.entity_memory["vaccine_type"] = vaccine_type
-                # Use default timing and bird count if not specified
-                result = create_vaccination_reminder(vaccine_type, "soon", None)
-            else:
-                result = "I still need to know which vaccine you want me to remind you about."
+            elif original_action == "vaccine_type":
+                vaccine_type = self._extract_vaccine_type(query)
+                if vaccine_type:
+                    self.entity_memory["vaccine_type"] = vaccine_type
+                    self.pending_parameters["vaccine_type"] = vaccine_type
+                    
+                    # Check if we have all parameters for reminder
+                    if self._has_all_reminder_parameters():
+                        result = self._create_reminder_from_parameters()
+                    else:
+                        # Still need timing
+                        self.pending_action = "timing"
+                        result = self._ask_clarification("timing")
+                else:
+                    result = "I still need to know which vaccine you want me to remind you about."
+            
+            elif original_action == "timing":
+                date_info = self._extract_timing(query)
+                if date_info:
+                    self.pending_parameters["timing"] = date_info
+                    
+                    if self._has_all_reminder_parameters():
+                        result = self._create_reminder_from_parameters()
+                    else:
+                        # Still need vaccine type
+                        self.pending_action = "vaccine_type"
+                        result = self._ask_clarification("vaccine_type")
+                else:
+                    result = "I still need to know when to set the reminder for."
+            
+            elif original_action == "feed_parameters":
+                num_birds, feed_per_bird, price_per_kg = extract_feed_parameters(query)
+                if all([num_birds, feed_per_bird, price_per_kg]):
+                    result = calculate_feed_cost(num_birds, feed_per_bird, price_per_kg)
+                else:
+                    result = "I still need all three parameters: number of birds, daily feed per bird (kg), and price per kg."
         
-        elif self.pending_action == "feed_parameters":
-            # Try to extract feed parameters from the response
-            num_birds, feed_per_bird, price_per_kg = extract_feed_parameters(query)
-            if all([num_birds, feed_per_bird, price_per_kg]):
-                result = calculate_feed_cost(num_birds, feed_per_bird, price_per_kg)
-            else:
-                result = "I still need all three parameters: number of birds, daily feed per bird (kg), and price per kg."
+        except Exception as e:
+            result = f"I encountered an error while processing your response: {str(e)}"
         
-        # Clear pending action after handling
-        pending_action = self.pending_action
-        self.pending_action = None
-        self.pending_intent = None
+        # Clear pending state if action is complete
+        if not self.pending_action:
+            self.pending_intent = None
+            self.pending_parameters = {}
         
         return {
-            "reasoning": {"intent": "clarification_response", "clarification_type": pending_action},
+            "reasoning": {
+                "intent": "follow_up_completion", 
+                "original_intent": original_intent,
+                "follow_up_type": original_action
+            },
             "result": result,
-            "requires_follow_up": False
+            "requires_follow_up": bool(self.pending_action)
         }
+    
+    def _extract_vaccine_type(self, query: str) -> str:
+        """Extract vaccine type from query"""
+        query_lower = query.lower()
+        vaccines = {
+            'newcastle': 'Newcastle',
+            'gumboro': 'Gumboro', 
+            'coccidiosis': 'Coccidiosis',
+            'marek': 'Marek',
+            'ibd': 'IBD'
+        }
+        
+        for vaccine_key, vaccine_name in vaccines.items():
+            if vaccine_key in query_lower:
+                return vaccine_name
+        
+        # If no specific vaccine found, use the query as-is for short responses
+        if len(query.strip().split()) <= 2:
+            return query.strip().title()
+        
+        return None
+    
+    def _extract_timing(self, query: str) -> str:
+        """Extract timing information from query"""
+        query_lower = query.lower()
+        
+        timing_patterns = [
+            r'(tomorrow|next week|in 2 weeks|in 1 month)',
+            r'(\d{1,2}[/-]\d{1,2}[/-]?\d{0,4})',
+            r'(monday|tuesday|wednesday|thursday|friday|saturday|sunday)',
+            r'(next monday|next tuesday|next wednesday|next thursday|next friday|next saturday|next sunday)'
+        ]
+        
+        for pattern in timing_patterns:
+            match = re.search(pattern, query_lower)
+            if match:
+                return match.group(1)
+        
+        # Default for very short responses
+        if len(query.strip().split()) <= 2:
+            return query.strip()
+        
+        return None
+    
+    def _has_all_reminder_parameters(self) -> bool:
+        """Check if we have all parameters needed for a reminder"""
+        return (self.pending_parameters.get("vaccine_type") and 
+                self.pending_parameters.get("timing"))
+    
+    def _create_reminder_from_parameters(self) -> str:
+        """Create reminder using collected parameters"""
+        vaccine_type = self.pending_parameters["vaccine_type"]
+        timing = self.pending_parameters["timing"]
+        bird_count = self.entity_memory.get("bird_count")
+        
+        # Clear pending state
+        self.pending_action = None
+        self.pending_intent = None
+        self.pending_parameters = {}
+        
+        return create_vaccination_reminder(vaccine_type, timing, bird_count)
     
     def _reason_about_query(self, query: str, context: str) -> Dict:
         """Analyze the query and plan actions"""
@@ -214,6 +305,8 @@ class ReActPoultryAgent:
         elif intent == "vaccination_reminder":
             if not any(vaccine in query.lower() for vaccine in ['newcastle', 'gumboro', 'coccidiosis']):
                 missing.append("vaccine_type")
+            if not any(word in query.lower() for word in ['tomorrow', 'monday', 'next', 'date']):
+                missing.append("timing")
         
         elif intent == "weather_inquiry":
             if "in " not in query.lower():
@@ -274,9 +367,13 @@ class ReActPoultryAgent:
             if vaccine_type and date_info:
                 return create_vaccination_reminder(vaccine_type, date_info, bird_count)
             else:
-                self.pending_action = "vaccine_type"
+                # Determine what's missing
+                if not vaccine_type:
+                    self.pending_action = "vaccine_type"
+                else:
+                    self.pending_action = "timing"
                 self.pending_intent = reasoning["intent"]
-                return "I can help set vaccination reminders! Please specify the vaccine type and when. Example: 'Remind me to vaccinate for Newcastle next Monday'"
+                return self._ask_clarification(self.pending_action)
 
         else:  # provide_advice - use your existing RAG
             return ask_qa_chain(self.qa_chain, query, context)
@@ -290,6 +387,14 @@ class ReActPoultryAgent:
             "location": "Which city would you like the weather information for?"
         }
         return clarifications.get(clarification_type, "Could you provide a bit more detail so I can help you better?")
+
+# [REST OF THE CODE REMAINS EXACTLY THE SAME - all your existing functions, UI setup, session state, etc.]
+
+# Only updating the agent initialization part to ensure fresh instance
+if "react_agent" in st.session_state:
+    # Ensure the agent has the new attributes
+    if not hasattr(st.session_state.react_agent, 'pending_parameters'):
+        st.session_state.react_agent.pending_parameters = {}
 
 # -------------------------
 # UI / Appearance settings
