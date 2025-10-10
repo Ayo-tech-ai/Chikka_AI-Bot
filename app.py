@@ -672,35 +672,37 @@ def handle_query(query: str, qa_chain, context: str = ""):
                 return "I can help calculate feed costs! Please include: number of birds, feed per bird (kg), and price per kg."
         
         # IMPROVED: Vaccination reminder routing - much more specific
-    has_clear_reminder_intent = (
-    # Pattern 1: Explicit reminder commands with vaccination context
-        (any(term in q_lower for term in ['remind me', 'set a reminder', 'create reminder', 'add to calendar', 'set calendar']) and
-         any(term in q_lower for term in ['vaccin', 'vaccinate', 'newcastle', 'gumboro', 'coccidiosis', 'marek', 'ibd']))
-        or
-    # Pattern 2: Schedule specifically for vaccinations (not feeding schedules)
-        ('schedule' in q_lower and 
-         any(term in q_lower for term in ['vaccin', 'vaccinate', 'vaccination']) and
-         not any(term in q_lower for term in ['feed', 'feeding', 'diet', 'food']))
-        or
-    # Pattern 3: Direct vaccination timing requests
-        re.search(r'(when|what time).*vaccin', q_lower) or
-        re.search(r'vaccin.*(reminder|alert|notification)', q_lower)
-    )
+        has_clear_reminder_intent = (
+            # Pattern 1: Explicit reminder commands with vaccination context
+            (any(term in q_lower for term in ['remind me', 'set a reminder', 'create reminder', 'add to calendar', 'set calendar']) and
+             any(term in q_lower for term in ['vaccin', 'vaccinate', 'newcastle', 'gumboro', 'coccidiosis', 'marek', 'ibd']))
+            or
+            # Pattern 2: Schedule specifically for vaccinations (not feeding schedules)
+            ('schedule' in q_lower and 
+             any(term in q_lower for term in ['vaccin', 'vaccinate', 'vaccination']) and
+             not any(term in q_lower for term in ['feed', 'feeding', 'diet', 'food']))
+            or
+            # Pattern 3: Direct vaccination timing requests
+            re.search(r'(when|what time).*vaccin', q_lower) or
+            re.search(r'vaccin.*(reminder|alert|notification)', q_lower)
+        )
 
-    if has_clear_reminder_intent:
-        vaccine_type, date_info, bird_count = extract_reminder_parameters(query)
+        if has_clear_reminder_intent:
+            vaccine_type, date_info, bird_count = extract_reminder_parameters(query)
 
-        # Memory fallback if available (for the non-ReAct path)
-        if (not vaccine_type or vaccine_type == "Poultry Vaccine") and "react_agent" in st.session_state:
-            mem = st.session_state.react_agent.entity_memory
-            vaccine_type = mem.get("vaccine_type") or mem.get("disease") or vaccine_type
-            if not bird_count:
-                bird_count = mem.get("bird_count")
+            # Memory fallback if available (for the non-ReAct path)
+            if (not vaccine_type or vaccine_type == "Poultry Vaccine") and "react_agent" in st.session_state:
+                mem = st.session_state.react_agent.entity_memory
+                vaccine_type = mem.get("vaccine_type") or mem.get("disease") or vaccine_type
+                if not bird_count:
+                    bird_count = mem.get("bird_count")
 
-        if vaccine_type and date_info:
-            return create_vaccination_reminder(vaccine_type, date_info, bird_count)
-        else:
-            return "I can help set vaccination reminders! Please specify the vaccine type and date. Example: 'Remind me to vaccinate for Newcastle disease next Monday'"
+            if vaccine_type and date_info:
+                return create_vaccination_reminder(vaccine_type, date_info, bird_count)
+            else:
+                return "I can help set vaccination reminders! Please specify the vaccine type and date. Example: 'Remind me to vaccinate for Newcastle disease next Monday'"
+        
+        # If none of the above, use the QA chain
         return ask_qa_chain(qa_chain, query, context)
 
 
