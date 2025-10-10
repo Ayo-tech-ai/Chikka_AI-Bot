@@ -424,7 +424,7 @@ st.markdown(
         background: #fafafa;
         display: flex;
         flex-direction: column;
-        margin-bottom: 100px; /* Space for fixed input */
+        margin-bottom: 125px; /* Space for fixed input */
     }
     .msg {
         padding: 12px 16px;
@@ -939,77 +939,76 @@ if "react_agent" in st.session_state:
                     unsafe_allow_html=True)
 
 # -------------------------
-# Conversation History Display
+# Chat Interface
 # -------------------------
 
-st.markdown("### Conversation")
-chat_box = st.container()
+st.markdown("<div class='chat-container'>", unsafe_allow_html=True)
 
-with chat_box:
-    st.markdown('<div class="chat-container">', unsafe_allow_html=True)
-    if not st.session_state.history:
-        st.markdown("<p style='color: #888; text-align: center; padding: 20px;'>No messages yet. Ask me anything about broiler farming!</p>", unsafe_allow_html=True)
-    else:
-        # Display messages in chronological order (top to bottom)
-        for msg in st.session_state.history:
-            role = msg.get("role", "User")
-            content = msg.get("content", "")
-            timestamp = msg.get("time", "")
-            is_thinking = msg.get("is_thinking", False)
-            css_class = "user" if role == "User" else "bot"
-            avatar = "👤" if role == "User" else "🐔"
-            label = f"{avatar} {role}"
+# Display chat history
+if not st.session_state.history:
+    st.markdown("<p style='color: #888; text-align: center; padding: 20px;'>No messages yet. Ask me anything about broiler farming!</p>", unsafe_allow_html=True)
+else:
+    for msg in st.session_state.history:
+        role_class = "user" if msg["role"] == "User" else "bot"
+        avatar = "👤" if msg["role"] == "User" else "🐔"
+        label = f"{avatar} {msg['role']}"
+        
+        # Special styling for thinking messages
+        content = msg["content"]
+        if msg.get("is_thinking"):
+            content = f"<div class='thinking-message'>{content}</div>"
 
-            # Special styling for thinking messages
-            if is_thinking:
-                content = f"<div class='thinking-message'>{content}</div>"
-
-            st.markdown(f"""  
-                <div class="msg {css_class}">  
-                    <div class="role">{label}</div>  
-                    <div>{content}</div>  
-                    <div class="timestamp">{timestamp}</div>  
-                </div>  
-            """, unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
-
-# -------------------------
-# Chat input (permanently fixed)
-# -------------------------
-
-st.markdown('<div class="fixed-input-container">', unsafe_allow_html=True)
-
-with st.container():
-    col1, col2, col3 = st.columns([0.1, 0.8, 0.1])
-    with col1:
-        clear = st.button("🧹", key="clear_btn", help="Clear chat history")
-    with col2:
-        user_input = st.text_input(
-            "Type your question here...", 
-            key="user_input_field", 
-            label_visibility="collapsed",
-            placeholder="Ask me about broiler farming..."
+        st.markdown(
+            f"""
+            <div class='msg {role_class}'>
+                <div class='role'>{label}</div>
+                <div>{content}</div>
+                <div class='timestamp'>{msg.get('time', '')}</div>
+            </div>
+            """,
+            unsafe_allow_html=True
         )
-    with col3:
-        send = st.button("Send", key="send_btn")
 
 st.markdown("</div>", unsafe_allow_html=True)
 
-# Handle input logic immediately after
-if clear:
+# Fixed input section (always visible)
+with st.container():
+    st.markdown("<div class='fixed-input-container'>", unsafe_allow_html=True)
+    
+    with st.form("chat_input", clear_on_submit=True):
+        cols = st.columns([1, 8, 1])  # Clear, Input, Send
+        
+        with cols[0]:
+            clear_chat = st.button("🧹", help="Clear conversation", key="clear_chat_btn")
+        
+        with cols[1]:
+            user_input = st.text_input(
+                "Ask Chikka...", 
+                key="user_input", 
+                label_visibility="collapsed",
+                placeholder="Ask me about broiler farming..."
+            )
+        
+        with cols[2]:
+            submitted = st.form_submit_button("Send")
+    
+    st.markdown("<div class='footer-text'>🐔 Chikka AI — Powered by 9jaAI_Farmer</div>", unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+# Handle input
+if clear_chat:
     st.session_state.history = []
     st.session_state.conversation_context = ""
     if "suggestions" in st.session_state:
         del st.session_state.suggestions
     if "react_agent" in st.session_state:
-        # Reset agent state
         st.session_state.react_agent.pending_action = None
         st.session_state.react_agent.pending_intent = None
         st.session_state.react_agent.pending_parameters = {}
         st.session_state.react_agent.entity_memory = {}
     st.rerun()
 
-if send and user_input.strip():
+if submitted and user_input.strip():
     q = user_input.strip()
 
     if st.session_state.history:
@@ -1019,17 +1018,21 @@ if send and user_input.strip():
         if entities:
             st.session_state.conversation_context = f"We've been discussing: {', '.join(entities)}"
 
-    # Use GMT+1 timezone
-    st.session_state.history.append(
-        {"role": "User", "content": q, "time": get_local_time()}
-    )
+    # Add user message
+    st.session_state.history.append({
+        "role": "User", 
+        "content": q, 
+        "time": get_local_time()
+    })
 
-    # Add a temporary "thinking" message instead of using st.spinner()
-    st.session_state.history.append(
-        {"role": "ChikkaBot", "content": "⏳ Thinking...", "time": get_local_time(), "is_thinking": True}
-    )
+    # Add thinking message
+    st.session_state.history.append({
+        "role": "ChikkaBot", 
+        "content": "⏳ Thinking...", 
+        "time": get_local_time(), 
+        "is_thinking": True
+    })
     
-    # Rerun to show the thinking message immediately
     st.rerun()
 
 # -------------------------
