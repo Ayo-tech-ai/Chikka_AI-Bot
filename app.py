@@ -541,12 +541,16 @@ st.markdown(
     .send-button {
         white-space: nowrap;
     }
+    .thinking-message {
+        color: #666;
+        font-style: italic;
+    }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-# JavaScript for auto-scroll
+# JavaScript for auto-scroll and auto-focus
 st.markdown(
     """
     <script>
@@ -560,6 +564,12 @@ st.markdown(
     // Scroll when page loads and when new content is added
     window.addEventListener('load', scrollToBottom);
     document.addEventListener('DOMNodeInserted', scrollToBottom);
+    
+    // Auto-focus input field
+    window.addEventListener('load', function() {
+        const input = window.parent.document.querySelector('input[data-testid="textInput"]');
+        if (input) input.focus();
+    });
     
     // Ensure fixed input stays properly positioned
     function updateInputPosition() {
@@ -935,7 +945,6 @@ if "react_agent" in st.session_state:
 st.markdown("### Conversation")
 chat_box = st.container()
 
-# In the conversation display section:
 with chat_box:
     st.markdown('<div class="chat-container">', unsafe_allow_html=True)
     if not st.session_state.history:
@@ -953,7 +962,7 @@ with chat_box:
 
             # Special styling for thinking messages
             if is_thinking:
-                content = f"<div style='color: #666; font-style: italic;'>{content}</div>"
+                content = f"<div class='thinking-message'>{content}</div>"
 
             st.markdown(f"""  
                 <div class="msg {css_class}">  
@@ -965,45 +974,63 @@ with chat_box:
     st.markdown("</div>", unsafe_allow_html=True)
 
 # -------------------------
-# ChatGPT-style Fixed Input Section at Bottom
+# Chat input (permanently fixed)
 # -------------------------
 
 st.markdown('<div class="fixed-input-container">', unsafe_allow_html=True)
 
-# Input row with clear icon and send button
-col1, col2, col3 = st.columns([0.1, 0.8, 0.1])
-
-with col1:
-    # Clear conversation icon
-    if st.button("🧹", key="clear_icon", help="Clear conversation"):
-        st.session_state.history = []
-        st.session_state.conversation_context = ""
-        if "suggestions" in st.session_state:
-            del st.session_state.suggestions
-        if "react_agent" in st.session_state:
-            # Reset agent state
-            st.session_state.react_agent.pending_action = None
-            st.session_state.react_agent.pending_intent = None
-            st.session_state.react_agent.pending_parameters = {}
-            st.session_state.react_agent.entity_memory = {}
-        st.rerun()
-
-with col2:
-    # Input form
-    with st.form(key="query_form", clear_on_submit=True):
-        user_query = st.text_input(
-            "Ask me about broilers:",
-            key="query_input",
-            placeholder="What would you like to know about broiler farming?",
-            label_visibility="collapsed"
+with st.container():
+    col1, col2, col3 = st.columns([0.1, 0.8, 0.1])
+    with col1:
+        clear = st.button("🧹", key="clear_btn", help="Clear chat history")
+    with col2:
+        user_input = st.text_input(
+            "Type your question here...", 
+            key="user_input_field", 
+            label_visibility="collapsed",
+            placeholder="Ask me about broiler farming..."
         )
-        submitted = st.form_submit_button("Send")
+    with col3:
+        send = st.button("Send", key="send_btn")
 
-with col3:
-    # Empty column for balance
-    st.write("")
+st.markdown("</div>", unsafe_allow_html=True)
 
-st.markdown('</div>', unsafe_allow_html=True)
+# Handle input logic immediately after
+if clear:
+    st.session_state.history = []
+    st.session_state.conversation_context = ""
+    if "suggestions" in st.session_state:
+        del st.session_state.suggestions
+    if "react_agent" in st.session_state:
+        # Reset agent state
+        st.session_state.react_agent.pending_action = None
+        st.session_state.react_agent.pending_intent = None
+        st.session_state.react_agent.pending_parameters = {}
+        st.session_state.react_agent.entity_memory = {}
+    st.rerun()
+
+if send and user_input.strip():
+    q = user_input.strip()
+
+    if st.session_state.history:
+        recent_messages = list(reversed(st.session_state.history))[:3]
+        context_text = " ".join([msg["content"] for msg in recent_messages if msg["role"] == "User"])
+        entities = extract_key_entities(context_text)
+        if entities:
+            st.session_state.conversation_context = f"We've been discussing: {', '.join(entities)}"
+
+    # Use GMT+1 timezone
+    st.session_state.history.append(
+        {"role": "User", "content": q, "time": get_local_time()}
+    )
+
+    # Add a temporary "thinking" message instead of using st.spinner()
+    st.session_state.history.append(
+        {"role": "ChikkaBot", "content": "⏳ Thinking...", "time": get_local_time(), "is_thinking": True}
+    )
+    
+    # Rerun to show the thinking message immediately
+    st.rerun()
 
 # -------------------------
 # Load FAISS & LLM lazily (only once)
@@ -1028,32 +1055,8 @@ except Exception as e:
 qa_chain = st.session_state._qa_chain
 
 # -------------------------
-# Handle a new submission
+# Handle thinking message replacement
 # -------------------------
-
-if submitted and user_query and user_query.strip():
-    q = user_query.strip()
-
-    if st.session_state.history:
-        recent_messages = list(reversed(st.session_state.history))[:3]
-        context_text = " ".join([msg["content"] for msg in recent_messages if msg["role"] == "User"])
-        entities = extract_key_entities(context_text)
-        if entities:
-            st.session_state.conversation_context = f"We've been discussing: {', '.join(entities)}"
-
-    # Use GMT+1 timezone
-    st.session_state.history.append(
-        {"role": "User", "content": q, "time": get_local_time()}
-    )
-
-    # Add a temporary "thinking" message instead of using st.spinner()
-    thinking_id = len(st.session_state.history)
-    st.session_state.history.append(
-        {"role": "ChikkaBot", "content": "⏳ Thinking...", "time": get_local_time(), "is_thinking": True}
-    )
-    
-    # Rerun to show the thinking message immediately
-    st.rerun()
 
 # After rerun, process the query and replace the thinking message
 if (st.session_state.history and 
