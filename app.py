@@ -423,6 +423,10 @@ if "faiss_loaded" not in st.session_state:
 if "conversation_context" not in st.session_state:
     st.session_state.conversation_context = ""
 
+# Initialize agent state separately
+if "agent_initialized" not in st.session_state:
+    st.session_state.agent_initialized = False
+
 # -------------------------
 # Backend helpers (cached)
 # -------------------------
@@ -752,16 +756,19 @@ st.write(
     "I'm here to help with practical advice on broiler care, health, and management."
 )
 
-# Show pending action status if any
-if "react_agent" in st.session_state and st.session_state.react_agent.pending_action:
-    pending_action = st.session_state.react_agent.pending_action
-    action_descriptions = {
-        "weather_location": "📍 Waiting for city name for weather information",
-        "vaccine_type": "💉 Waiting for vaccine type for reminder",
-        "feed_parameters": "💰 Waiting for feed calculation parameters"
-    }
-    st.markdown(f'<div class="pending-action">{action_descriptions.get(pending_action, "Waiting for your input")}</div>', 
-                unsafe_allow_html=True)
+# Show pending action status if any - with safe attribute checking
+if "react_agent" in st.session_state:
+    # Check if the agent has the pending_action attribute
+    agent = st.session_state.react_agent
+    if hasattr(agent, 'pending_action') and agent.pending_action:
+        pending_action = agent.pending_action
+        action_descriptions = {
+            "weather_location": "📍 Waiting for city name for weather information",
+            "vaccine_type": "💉 Waiting for vaccine type for reminder",
+            "feed_parameters": "💰 Waiting for feed calculation parameters"
+        }
+        st.markdown(f'<div class="pending-action">{action_descriptions.get(pending_action, "Waiting for your input")}</div>', 
+                    unsafe_allow_html=True)
 
 if "suggestions" in st.session_state and st.session_state.suggestions:
     st.markdown("You might want to ask:")
@@ -798,8 +805,9 @@ try:
             st.session_state.faiss_loaded = True
             st.session_state._qa_chain = qa_chain
             
-            # Initialize ReAct agent
+            # Initialize ReAct agent - always create fresh instance
             st.session_state.react_agent = ReActPoultryAgent(qa_chain)
+            st.session_state.agent_initialized = True
 except Exception as e:
     st.error(f"Sorry, I'm having trouble loading my knowledge base: {e}")
     st.stop()
@@ -878,6 +886,8 @@ if st.button("🧹 Clear Conversation"):
     if "suggestions" in st.session_state:
         del st.session_state.suggestions
     if "react_agent" in st.session_state:
+        # Reset agent state but keep the instance
         st.session_state.react_agent.pending_action = None
         st.session_state.react_agent.pending_intent = None
+        st.session_state.react_agent.entity_memory = {}
     st.rerun()
