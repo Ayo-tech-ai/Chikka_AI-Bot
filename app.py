@@ -13,7 +13,7 @@ from tools.calculator import calculate_feed_cost
 from tools.reminder import create_vaccination_reminder
 
 # -------------------------
-# ReAct Agent Class
+# ReAct Agent Class with State Management
 # -------------------------
 
 class ReActPoultryAgent:
@@ -22,8 +22,10 @@ class ReActPoultryAgent:
         self.reasoning_history = []
         self.conversation_context = ""
         self.last_intent = None
-        self.last_topic = None  # Broader topic tracking
-        self.entity_memory = {}  # Store multiple entities
+        self.last_topic = None
+        self.entity_memory = {}
+        self.pending_action = None  # Track pending actions waiting for user input
+        self.pending_intent = None  # Track the original intent during clarification
 
     def _update_conversation_memory(self, query: str, reasoning: Dict):
         """Remember important context for ALL conversation types"""
@@ -32,7 +34,6 @@ class ReActPoultryAgent:
         # Remember broader topics
         if reasoning["intent"] == "vaccination_reminder":
             self.last_topic = "vaccination"
-            # Remember vaccine type if mentioned
             if "newcastle" in query.lower():
                 self.entity_memory["vaccine_type"] = "Newcastle"
             elif "gumboro" in query.lower():
@@ -40,7 +41,6 @@ class ReActPoultryAgent:
             
         elif reasoning["intent"] == "feed_calculation":
             self.last_topic = "feeding"
-            # Remember feed parameters if mentioned
             num_birds, feed_per_bird, price_per_kg = extract_feed_parameters(query)
             if num_birds:
                 self.entity_memory["bird_count"] = num_birds
@@ -49,7 +49,6 @@ class ReActPoultryAgent:
             
         elif reasoning["intent"] == "health_advice":
             self.last_topic = "health"
-            # Remember disease if mentioned
             diseases = ['newcastle', 'gumboro', 'coccidiosis', 'marek', 'ibd']
             for disease in diseases:
                 if disease in query.lower():
@@ -58,12 +57,10 @@ class ReActPoultryAgent:
                 
         elif reasoning["intent"] == "weather_inquiry":
             self.last_topic = "weather"
-            # Remember location if mentioned
             city = extract_city(query)
-            if city != "Lagos":  # Only if specific city mentioned
+            if city != "Lagos":
                 self.entity_memory["location"] = city
      
-        # Build comprehensive conversation context
         context_parts = []
         if self.last_topic:
             context_parts.append(f"Discussing {self.last_topic}")
@@ -74,9 +71,13 @@ class ReActPoultryAgent:
         self.conversation_context = ". ".join(context_parts) if context_parts else ""
     
     def process_query(self, query: str, context: str = "") -> Dict:
-        """ReAct pattern: Reason + Act"""
+        """ReAct pattern with state management for follow-up conversations"""
         
-        # REASONING STEP
+        # Check if we have a pending action that this query might be answering
+        if self.pending_action and self._is_clarification_response(query):
+            return self._handle_clarification_response(query)
+        
+        # Normal reasoning for new queries
         reasoning = self._reason_about_query(query, context)
         self.reasoning_history.append(reasoning)
         
@@ -87,6 +88,77 @@ class ReActPoultryAgent:
             "reasoning": reasoning,
             "result": action_result,
             "requires_follow_up": reasoning.get("missing_info")
+        }
+    
+    def _is_clarification_response(self, query: str) -> bool:
+        """Check if the current query is likely answering a previous clarification request"""
+        if not self.pending_action:
+            return False
+        
+        # Simple check: if we asked for location and user provides a city name
+        if self.pending_action == "weather_location" and len(query.strip().split()) <= 3:
+            return True
+            
+        # If we asked for vaccine type and user provides a disease name
+        if self.pending_action == "vaccine_type" and any(vaccine in query.lower() for vaccine in 
+                                                       ['newcastle', 'gumboro', 'coccidiosis', 'marek', 'ibd']):
+            return True
+            
+        # If we asked for feed parameters and user provides numbers
+        if self.pending_action == "feed_parameters" and re.search(r'\d+', query):
+            return True
+            
+        return False
+    
+    def _handle_clarification_response(self, query: str) -> Dict:
+        """Handle user's response to a clarification question"""
+        result = ""
+        
+        if self.pending_action == "weather_location":
+            # User provided location for weather
+            city = query.strip()
+            if city:
+                self.entity_memory["location"] = city
+                result = get_weather(city, "NG")
+            else:
+                result = "I still need to know which city you want weather information for."
+        
+        elif self.pending_action == "vaccine_type":
+            # User provided vaccine type for reminder
+            vaccine_type = None
+            if "newcastle" in query.lower():
+                vaccine_type = "Newcastle"
+            elif "gumboro" in query.lower():
+                vaccine_type = "Gumboro"
+            elif "coccidiosis" in query.lower():
+                vaccine_type = "Coccidiosis"
+            else:
+                vaccine_type = query.strip().title()
+            
+            if vaccine_type:
+                self.entity_memory["vaccine_type"] = vaccine_type
+                # Use default timing and bird count if not specified
+                result = create_vaccination_reminder(vaccine_type, "soon", None)
+            else:
+                result = "I still need to know which vaccine you want me to remind you about."
+        
+        elif self.pending_action == "feed_parameters":
+            # Try to extract feed parameters from the response
+            num_birds, feed_per_bird, price_per_kg = extract_feed_parameters(query)
+            if all([num_birds, feed_per_bird, price_per_kg]):
+                result = calculate_feed_cost(num_birds, feed_per_bird, price_per_kg)
+            else:
+                result = "I still need all three parameters: number of birds, daily feed per bird (kg), and price per kg."
+        
+        # Clear pending action after handling
+        pending_action = self.pending_action
+        self.pending_action = None
+        self.pending_intent = None
+        
+        return {
+            "reasoning": {"intent": "clarification_response", "clarification_type": pending_action},
+            "result": result,
+            "requires_follow_up": False
         }
     
     def _reason_about_query(self, query: str, context: str) -> Dict:
@@ -142,8 +214,6 @@ class ReActPoultryAgent:
         elif intent == "vaccination_reminder":
             if not any(vaccine in query.lower() for vaccine in ['newcastle', 'gumboro', 'coccidiosis']):
                 missing.append("vaccine_type")
-            if not any(word in query.lower() for word in ['tomorrow', 'monday', 'next', 'date']):
-                missing.append("timing")
         
         elif intent == "weather_inquiry":
             if "in " not in query.lower():
@@ -176,11 +246,14 @@ class ReActPoultryAgent:
         tool_plan = reasoning["tool_plan"]
         
         if tool_plan["primary_action"] == "clarify":
+            # Set pending action state
+            self.pending_action = tool_plan["clarification_type"]
+            self.pending_intent = reasoning["intent"]
             return self._ask_clarification(tool_plan["clarification_type"])
         
-        # Route to appropriate tool (using your existing functions)
+        # Route to appropriate tool
         if tool_plan["primary_action"] == "get_weather":
-            city = extract_city(query)
+            city = extract_city(query) or self.entity_memory.get("location", "Lagos")
             return get_weather(city, "NG")
         
         elif tool_plan["primary_action"] == "calculate_feed":
@@ -188,21 +261,21 @@ class ReActPoultryAgent:
             if all([num_birds, feed_per_bird, price_per_kg]):
                 return calculate_feed_cost(num_birds, feed_per_bird, price_per_kg)
             else:
+                self.pending_action = "feed_parameters"
+                self.pending_intent = reasoning["intent"]
                 return "I can help calculate feed costs! Please include: number of birds, daily feed per bird (kg), and price per kg of feed."
         
         elif tool_plan["primary_action"] == "create_reminder":
             vaccine_type, date_info, bird_count = extract_reminder_parameters(query)
-            # Fallback to what's in entity memory if not explicitly present in current query
-            if (not vaccine_type or vaccine_type == "Poultry Vaccine") and "vaccine_type" in self.entity_memory:
-                vaccine_type = self.entity_memory.get("vaccine_type")
-            if (not vaccine_type or vaccine_type == "Poultry Vaccine") and "disease" in self.entity_memory:
-                vaccine_type = self.entity_memory.get("disease")
-            if not bird_count and "bird_count" in self.entity_memory:
-                bird_count = self.entity_memory.get("bird_count")
-
+            # Use memory fallbacks
+            vaccine_type = vaccine_type or self.entity_memory.get("vaccine_type")
+            bird_count = bird_count or self.entity_memory.get("bird_count")
+            
             if vaccine_type and date_info:
                 return create_vaccination_reminder(vaccine_type, date_info, bird_count)
             else:
+                self.pending_action = "vaccine_type"
+                self.pending_intent = reasoning["intent"]
                 return "I can help set vaccination reminders! Please specify the vaccine type and when. Example: 'Remind me to vaccinate for Newcastle next Monday'"
 
         else:  # provide_advice - use your existing RAG
@@ -294,6 +367,15 @@ st.markdown(
         font-style: italic;
         color: #666;
         font-size: 14px;
+    }
+    .pending-action {
+        background-color: #fff3cd;
+        border: 1px solid #ffeaa7;
+        padding: 8px 12px;
+        border-radius: 6px;
+        margin: 5px 0;
+        font-size: 12px;
+        color: #856404;
     }
     </style>
     """,
@@ -646,65 +728,19 @@ def extract_reminder_parameters(query: str) -> tuple:
         return None, None, None
 
 def handle_query(query: str, qa_chain, context: str = ""):
-    # Use ReAct agent if available, otherwise fallback to original logic
+    # Always use ReAct agent for consistent state management
     if "react_agent" in st.session_state:
         result = st.session_state.react_agent.process_query(query, context)
         
-        # Show reasoning in expander (optional - you can remove this if you don't want it)
+        # Show reasoning in expander (optional)
         with st.expander("🔍 See my thought process"):
             for step in result["reasoning"]["reasoning_steps"]:
                 st.write(f"• {step}")
         
         return result["result"]
     else:
-        # Fallback to your original logic (keeping your existing functionality)
-        q_lower = query.lower()
-        
-        if "weather" in q_lower or "rain" in q_lower or "temperature" in q_lower:
-            city = extract_city(query)
-            return get_weather(city, "NG")
-        
-        if any(term in q_lower for term in ['feed cost', 'feed calculation', 'calculate feed', 'feed budget', 'cost of feeding']):
-            num_birds, feed_per_bird, price_per_kg = extract_feed_parameters(query)
-            if num_birds and feed_per_bird and price_per_kg:
-                return calculate_feed_cost(num_birds, feed_per_bird, price_per_kg)
-            else:
-                return "I can help calculate feed costs! Please include: number of birds, feed per bird (kg), and price per kg."
-        
-        # IMPROVED: Vaccination reminder routing - much more specific
-        has_clear_reminder_intent = (
-            # Pattern 1: Explicit reminder commands with vaccination context
-            (any(term in q_lower for term in ['remind me', 'set a reminder', 'create reminder', 'add to calendar', 'set calendar']) and
-             any(term in q_lower for term in ['vaccin', 'vaccinate', 'newcastle', 'gumboro', 'coccidiosis', 'marek', 'ibd']))
-            or
-            # Pattern 2: Schedule specifically for vaccinations (not feeding schedules)
-            ('schedule' in q_lower and 
-             any(term in q_lower for term in ['vaccin', 'vaccinate', 'vaccination']) and
-             not any(term in q_lower for term in ['feed', 'feeding', 'diet', 'food']))
-            or
-            # Pattern 3: Direct vaccination timing requests
-            re.search(r'(when|what time).*vaccin', q_lower) or
-            re.search(r'vaccin.*(reminder|alert|notification)', q_lower)
-        )
-
-        if has_clear_reminder_intent:
-            vaccine_type, date_info, bird_count = extract_reminder_parameters(query)
-
-            # Memory fallback if available (for the non-ReAct path)
-            if (not vaccine_type or vaccine_type == "Poultry Vaccine") and "react_agent" in st.session_state:
-                mem = st.session_state.react_agent.entity_memory
-                vaccine_type = mem.get("vaccine_type") or mem.get("disease") or vaccine_type
-                if not bird_count:
-                    bird_count = mem.get("bird_count")
-
-            if vaccine_type and date_info:
-                return create_vaccination_reminder(vaccine_type, date_info, bird_count)
-            else:
-                return "I can help set vaccination reminders! Please specify the vaccine type and date. Example: 'Remind me to vaccinate for Newcastle disease next Monday'"
-        
-        # If none of the above, use the QA chain
+        # Fallback - should not happen with proper initialization
         return ask_qa_chain(qa_chain, query, context)
-
 
 # -------------------------
 # App header & Input form
@@ -715,6 +751,17 @@ st.write(
     "👋 Hello! I'm Chikka, your friendly assistant for backyard broiler farming. "
     "I'm here to help with practical advice on broiler care, health, and management."
 )
+
+# Show pending action status if any
+if "react_agent" in st.session_state and st.session_state.react_agent.pending_action:
+    pending_action = st.session_state.react_agent.pending_action
+    action_descriptions = {
+        "weather_location": "📍 Waiting for city name for weather information",
+        "vaccine_type": "💉 Waiting for vaccine type for reminder",
+        "feed_parameters": "💰 Waiting for feed calculation parameters"
+    }
+    st.markdown(f'<div class="pending-action">{action_descriptions.get(pending_action, "Waiting for your input")}</div>', 
+                unsafe_allow_html=True)
 
 if "suggestions" in st.session_state and st.session_state.suggestions:
     st.markdown("You might want to ask:")
@@ -767,13 +814,11 @@ if submitted and user_query and user_query.strip():
     q = user_query.strip()
 
     if st.session_state.history:
-        # use the most recent messages but keep natural top-down order
         recent_messages = list(reversed(st.session_state.history))[:3]
         context_text = " ".join([msg["content"] for msg in recent_messages if msg["role"] == "User"])
         entities = extract_key_entities(context_text)
         if entities:
             st.session_state.conversation_context = f"We've been discussing: {', '.join(entities)}"
-
 
     st.session_state.history.append(
         {"role": "User", "content": q, "time": datetime.datetime.now().strftime("%H:%M")}
@@ -791,7 +836,7 @@ if submitted and user_query and user_query.strip():
     st.session_state.suggestions = generate_suggestions(q, answer_text)
 
 # -------------------------
-# Chat history display (UPDATED: Top to bottom order)
+# Chat history display (Top to bottom order)
 # -------------------------
 
 st.markdown("### Conversation")
@@ -832,4 +877,7 @@ if st.button("🧹 Clear Conversation"):
     st.session_state.conversation_context = ""
     if "suggestions" in st.session_state:
         del st.session_state.suggestions
+    if "react_agent" in st.session_state:
+        st.session_state.react_agent.pending_action = None
+        st.session_state.react_agent.pending_intent = None
     st.rerun()
