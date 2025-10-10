@@ -411,12 +411,12 @@ class ReActPoultryAgent:
 
 st.set_page_config(page_title="Chikka AI Assistant", layout="centered")
 
-# Updated CSS for chat bubbles + scroll area with auto-scroll and sticky input
+# Updated CSS for ChatGPT-style fixed input
 st.markdown(
     """
     <style>
     .chat-container {
-        max-height: 500px;
+        max-height: 65vh;
         overflow-y: auto;
         padding: 8px;
         border-radius: 8px;
@@ -424,7 +424,7 @@ st.markdown(
         background: #fafafa;
         display: flex;
         flex-direction: column;
-        margin-bottom: 10px;
+        margin-bottom: 100px; /* Space for fixed input */
     }
     .msg {
         padding: 12px 16px;
@@ -492,24 +492,54 @@ st.markdown(
         font-size: 12px;
         color: #856404;
     }
-    .input-container {
-        position: sticky;
+    /* ChatGPT-style fixed input container */
+    .fixed-input-container {
+        position: fixed;
         bottom: 0;
+        left: 0;
+        right: 0;
         background: white;
-        padding: 15px 0;
+        padding: 20px;
         border-top: 1px solid #e0e0e0;
-        margin-top: 10px;
-        z-index: 100;
+        z-index: 1000;
+        box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
     }
-    /* Ensure the main content area has proper spacing */
+    /* Main content padding to prevent overlap */
     .main .block-container {
-        padding-bottom: 150px;
+        padding-bottom: 150px !important;
     }
     .footer-text {
         text-align: center;
         color: #666;
         font-size: 12px;
         margin-top: 5px;
+    }
+    /* Input row with clear and send buttons */
+    .input-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        max-width: 800px;
+        margin: 0 auto;
+    }
+    .clear-icon {
+        background: none;
+        border: none;
+        font-size: 20px;
+        cursor: pointer;
+        padding: 8px;
+        border-radius: 50%;
+        transition: background-color 0.2s;
+        color: #666;
+    }
+    .clear-icon:hover {
+        background-color: #f5f5f5;
+    }
+    .input-field {
+        flex: 1;
+    }
+    .send-button {
+        white-space: nowrap;
     }
     </style>
     """,
@@ -530,6 +560,17 @@ st.markdown(
     // Scroll when page loads and when new content is added
     window.addEventListener('load', scrollToBottom);
     document.addEventListener('DOMNodeInserted', scrollToBottom);
+    
+    // Ensure fixed input stays properly positioned
+    function updateInputPosition() {
+        const inputContainer = document.querySelector('.fixed-input-container');
+        if (inputContainer) {
+            inputContainer.style.left = '0';
+            inputContainer.style.right = '0';
+        }
+    }
+    window.addEventListener('resize', updateInputPosition);
+    updateInputPosition();
     </script>
     """,
     unsafe_allow_html=True,
@@ -918,19 +959,43 @@ with chat_box:
     st.markdown("</div>", unsafe_allow_html=True)
 
 # -------------------------
-# Input Section at Bottom
+# ChatGPT-style Fixed Input Section at Bottom
 # -------------------------
 
-st.markdown('<div class="input-container">', unsafe_allow_html=True)
+st.markdown('<div class="fixed-input-container">', unsafe_allow_html=True)
 
-# Input form at the bottom
-with st.form(key="query_form", clear_on_submit=True):
-    user_query = st.text_input(
-        "Ask me about broilers:",
-        key="query_input",
-        placeholder="What would you like to know about broiler farming?"
-    )
-    submitted = st.form_submit_button("Send")
+# Input row with clear icon and send button
+col1, col2, col3 = st.columns([0.1, 0.8, 0.1])
+
+with col1:
+    # Clear conversation icon
+    if st.button("🧹", key="clear_icon", help="Clear conversation"):
+        st.session_state.history = []
+        st.session_state.conversation_context = ""
+        if "suggestions" in st.session_state:
+            del st.session_state.suggestions
+        if "react_agent" in st.session_state:
+            # Reset agent state
+            st.session_state.react_agent.pending_action = None
+            st.session_state.react_agent.pending_intent = None
+            st.session_state.react_agent.pending_parameters = {}
+            st.session_state.react_agent.entity_memory = {}
+        st.rerun()
+
+with col2:
+    # Input form
+    with st.form(key="query_form", clear_on_submit=True):
+        user_query = st.text_input(
+            "Ask me about broilers:",
+            key="query_input",
+            placeholder="What would you like to know about broiler farming?",
+            label_visibility="collapsed"
+        )
+        submitted = st.form_submit_button("Send")
+
+with col3:
+    # Empty column for balance
+    st.write("")
 
 st.markdown('</div>', unsafe_allow_html=True)
 
