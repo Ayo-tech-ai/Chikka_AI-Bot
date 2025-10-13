@@ -924,9 +924,8 @@ st.markdown("</div>", unsafe_allow_html=True)
 # -------------------------
 
 # Clear chat button
-col1, col2 = st.columns([1, 11])
-with col1:
-    clear_chat = st.button("🧹 Clear Chat", help="Clear conversation history")
+# Clear chat button - minimal version
+clear_chat = st.button("🗑️", help="Clear conversation history")
 
 # Chat input - pinned to bottom by Streamlit
 user_input = st.chat_input("Ask me about broiler farming...")
