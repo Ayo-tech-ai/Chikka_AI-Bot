@@ -415,12 +415,12 @@ class ReActPoultryAgent:
 
 st.set_page_config(page_title="Chikka AI Assistant", layout="centered")
 
-# Updated CSS for improved chat interface with fixed input
+# Updated CSS for improved chat interface with Streamlit's native chat input
 st.markdown(
     """
     <style>
     .chat-container {
-        max-height: 65vh;
+        max-height: 70vh;
         overflow-y: auto;
         padding: 8px;
         border-radius: 8px;
@@ -428,7 +428,7 @@ st.markdown(
         background: #fafafa;
         display: flex;
         flex-direction: column;
-        margin-bottom: 20px; /* Reduced since input is fixed */
+        margin-bottom: 10px;
     }
     .msg {
         padding: 12px 16px;
@@ -496,22 +496,9 @@ st.markdown(
         font-size: 12px;
         color: #856404;
     }
-    /* Fixed input container - IMPROVED */
-    .fixed-input-container {
-        position: fixed;
-        bottom: 0;
-        left: 0;
-        right: 0;
-        background: white;
-        padding: 15px 20px;
-        border-top: 1px solid #e0e0e0;
-        z-index: 1000;
-        box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
-        backdrop-filter: blur(10px);
-    }
-    /* Main content padding to prevent overlap */
+    /* Main content padding to prevent overlap with chat input */
     .main .block-container {
-        padding-bottom: 180px !important;
+        padding-bottom: 100px !important;
     }
     .footer-text {
         text-align: center;
@@ -932,34 +919,19 @@ else:
 
 st.markdown("</div>", unsafe_allow_html=True)
 
-# Fixed input section (always visible)
-st.markdown("<div class='fixed-input-container'>", unsafe_allow_html=True)
+# -------------------------
+# Chat Input (Pinned to Bottom)
+# -------------------------
 
-# Use columns for layout without form
-cols = st.columns([1, 8, 1])  # Clear, Input, Send
+# Clear chat button
+col1, col2 = st.columns([1, 11])
+with col1:
+    clear_chat = st.button("🧹 Clear Chat", help="Clear conversation history")
 
-with cols[0]:
-    clear_chat = st.button("🧹", help="Clear conversation", key="clear_chat_btn")
+# Chat input - pinned to bottom by Streamlit
+user_input = st.chat_input("Ask me about broiler farming...")
 
-with cols[1]:
-    # Use a form with clear_on_submit for proper auto-clear
-    with st.form(key="chat_form", clear_on_submit=True):
-        user_input = st.text_input(
-            "Ask Chikka...", 
-            key="user_input", 
-            label_visibility="collapsed",
-            placeholder="Ask me about broiler farming..."
-        )
-        submitted = st.form_submit_button("Send")
-
-with cols[2]:
-    # Empty column for balance
-    st.write("")
-
-st.markdown("<div class='footer-text'>🐔 Chikka AI — Powered by 9jaAI_Farmer</div>", unsafe_allow_html=True)
-st.markdown("</div>", unsafe_allow_html=True)
-
-# Handle input
+# Handle clear chat
 if clear_chat:
     st.session_state.history = []
     st.session_state.conversation_context = ""
@@ -972,7 +944,8 @@ if clear_chat:
         st.session_state.react_agent.entity_memory = {}
     st.rerun()
 
-if submitted and user_input.strip():
+# Handle user input
+if user_input:
     q = user_input.strip()
 
     if st.session_state.history:
