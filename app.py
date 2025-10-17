@@ -480,7 +480,7 @@ class ReActPoultryAgent:
 
 st.set_page_config(page_title="Chikka AI Assistant", layout="centered")
 
-# Updated CSS for improved chat interface with Streamlit's native chat input
+# Updated CSS for improved chat interface with tool response styling
 st.markdown(
     """
     <style>
@@ -515,6 +515,42 @@ st.markdown(
         text-align: left;
         border: 1px solid #e0e0e0;
     }
+    
+    /* Tool Response Styling */
+    .tool-response {
+        background: #f8fdff;
+        border: 2px solid #e3f2fd;
+        border-left: 6px solid #2196f3;
+        margin-right: auto;
+        text-align: left;
+    }
+    .tool-weather {
+        border-left-color: #4fc3f7;
+        background: #f0faff;
+    }
+    .tool-calculator {
+        border-left-color: #4caf50;
+        background: #f1f8e9;
+    }
+    .tool-reminder {
+        border-left-color: #ff9800;
+        background: #fff3e0;
+    }
+    .tool-clarification {
+        border-left-color: #ffb300;
+        background: #fff8e1;
+    }
+    
+    .tool-header {
+        font-weight: 600;
+        font-size: 13px;
+        margin-bottom: 6px;
+        color: #555;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+    
     .role {
         font-weight: 600;
         font-size: 13px;
@@ -574,6 +610,34 @@ st.markdown(
     .thinking-message {
         color: #666;
         font-style: italic;
+    }
+    
+    /* Sidebar styling */
+    .sidebar-tool-item {
+        padding: 8px 0;
+        border-bottom: 1px solid #f0f0f0;
+    }
+    .sidebar-tool-header {
+        font-weight: 600;
+        color: #333;
+        margin-bottom: 4px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+    .sidebar-example {
+        background: #f8f9fa;
+        padding: 6px 8px;
+        border-radius: 4px;
+        margin: 2px 0;
+        font-size: 12px;
+        border-left: 3px solid #dee2e6;
+    }
+    .sidebar-note {
+        font-size: 11px;
+        color: #666;
+        font-style: italic;
+        margin-top: 4px;
     }
     </style>
     """,
@@ -903,6 +967,33 @@ def extract_reminder_parameters(query: str) -> tuple:
     except Exception as e:
         return None, None, None
 
+def format_tool_response(response: str, tool_type: str, reasoning: Dict = None) -> str:
+    """Format tool responses with appropriate styling and headers"""
+    tool_icons = {
+        "weather": "🌤️",
+        "calculator": "💰", 
+        "reminder": "💉",
+        "clarification": "❓"
+    }
+    
+    tool_names = {
+        "weather": "Weather Information",
+        "calculator": "Feed Calculation",
+        "reminder": "Vaccination Reminder", 
+        "clarification": "Clarification Needed"
+    }
+    
+    icon = tool_icons.get(tool_type, "🔧")
+    name = tool_names.get(tool_type, "Tool Response")
+    
+    # Create the tool header
+    tool_header = f'<div class="tool-header">{icon} {name}</div>'
+    
+    # Wrap the response in appropriate tool styling
+    tool_class = f"tool-{tool_type}" if tool_type in ["weather", "calculator", "reminder"] else "tool-response"
+    
+    return f'<div class="msg tool-response {tool_class}">{tool_header}{response}</div>'
+
 def handle_query(query: str, qa_chain, context: str = ""):
     # Always use ReAct agent for consistent state management
     if "react_agent" in st.session_state:
@@ -915,7 +1006,31 @@ def handle_query(query: str, qa_chain, context: str = ""):
             for step in reasoning_steps:
                 st.write(f"• {step}")
         
-        return result["result"]
+        # Determine if this is a tool response or RAG response
+        reasoning = result.get("reasoning", {})
+        intent = reasoning.get("intent", "")
+        tool_plan = reasoning.get("tool_plan", {})
+        
+        # Check if this was a tool call
+        is_tool_response = intent in ["weather_inquiry", "feed_calculation", "vaccination_reminder"] or reasoning.get("follow_up_type")
+        
+        if is_tool_response:
+            # Determine tool type for styling
+            if intent == "weather_inquiry" or reasoning.get("follow_up_type") == "location":
+                tool_type = "weather"
+            elif intent == "feed_calculation" or reasoning.get("follow_up_type") == "feed_parameters":
+                tool_type = "calculator"
+            elif intent == "vaccination_reminder" or reasoning.get("follow_up_type") in ["vaccine_type", "timing"]:
+                tool_type = "reminder"
+            elif reasoning.get("requires_clarification") or result.get("requires_follow_up"):
+                tool_type = "clarification"
+            else:
+                tool_type = "reminder"  # default
+            
+            return format_tool_response(result["result"], tool_type, reasoning)
+        else:
+            # Regular RAG response - return as plain text for standard styling
+            return result["result"]
     else:
         # Fallback - should not happen with proper initialization
         return ask_qa_chain(qa_chain, query, context)
@@ -924,6 +1039,82 @@ def get_local_time():
     """Get current time in GMT+1 timezone"""
     gmt_plus_one = timezone(timedelta(hours=1))
     return datetime.datetime.now(gmt_plus_one).strftime("%H:%M")
+
+# -------------------------
+# Sidebar with Tool Instructions
+# -------------------------
+
+def show_tool_instructions_sidebar():
+    with st.sidebar:
+        st.header("🎯 How to Use Tools")
+        st.markdown("Learn how to effectively use Chikka's special features!")
+        
+        st.markdown("---")
+        
+        # Weather Tool
+        st.markdown(
+            """
+            <div class="sidebar-tool-item">
+                <div class="sidebar-tool-header">🌤️ Weather Information</div>
+                <div class="sidebar-example">"What's the weather in Lagos?"</div>
+                <div class="sidebar-example">"Check weather in Abuja"</div>
+                <div class="sidebar-example">"Temperature in Kano tomorrow"</div>
+                <div class="sidebar-note">Mention the city name for accurate weather</div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+        
+        # Feed Calculator
+        st.markdown(
+            """
+            <div class="sidebar-tool-item">
+                <div class="sidebar-tool-header">💰 Feed Cost Calculator</div>
+                <div class="sidebar-example">"Calculate feed for 100 birds"</div>
+                <div class="sidebar-example">"100 birds, 0.15kg feed, ₦250 per kg"</div>
+                <div class="sidebar-example">"Help me calculate feed budget"</div>
+                <div class="sidebar-note">Include: bird count, feed amount per bird, price per kg</div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+        
+        # Vaccination Reminder
+        st.markdown(
+            """
+            <div class="sidebar-tool-item">
+                <div class="sidebar-tool-header">💉 Vaccination Reminder</div>
+                <div class="sidebar-example">"Set reminder for Newcastle vaccine"</div>
+                <div class="sidebar-example">"Remind me about Gumboro next Monday"</div>
+                <div class="sidebar-example">"Help me schedule a vaccination"</div>
+                <div class="sidebar-note">Specify vaccine type and timing for best results</div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+        
+        st.markdown("---")
+        
+        # Tips Section
+        st.subheader("💡 Tips for Best Results")
+        st.markdown("""
+        - **Be specific** with numbers and dates
+        - **Use natural language** - I understand both formal and casual requests
+        - **Mention locations** for weather information
+        - **Include all parameters** for accurate calculations
+        - **Ask follow-up questions** to continue the conversation
+        """)
+        
+        st.markdown("---")
+        
+        # Response Types Explanation
+        st.subheader("🎨 Understanding Responses")
+        st.markdown("""
+        - **Colored borders** = Tool responses
+        - **Plain style** = General knowledge answers  
+        - **Icons** show which tool was used
+        - **Clarification requests** mean I need more info
+        """)
 
 # -------------------------
 # App header & Introduction
@@ -935,6 +1126,9 @@ st.write(
     "👋 Hello! I'm Chikka, your friendly assistant for backyard broiler farming. "
     "I'm here to help with practical advice on broiler care, health, and management."
 )
+
+# Show tool instructions sidebar
+show_tool_instructions_sidebar()
 
 # Show pending action status if any - with safe attribute checking
 if "react_agent" in st.session_state:
@@ -962,25 +1156,31 @@ if not st.session_state.history:
     st.markdown("<p style='color: #888; text-align: center; padding: 20px;'>No messages yet. Ask me anything about broiler farming!</p>", unsafe_allow_html=True)
 else:
     for msg in st.session_state.history:
-        role_class = "user" if msg["role"] == "User" else "bot"
-        avatar = "👤" if msg["role"] == "User" else "🐔"
-        label = f"{avatar} {msg['role']}"
-        
-        # Special styling for thinking messages
-        content = msg["content"]
-        if msg.get("is_thinking"):
-            content = f"<div class='thinking-message'>{content}</div>"
+        # Check if this is a tool response (contains tool-response class)
+        if 'tool-response' in msg["content"]:
+            # Tool response - render as HTML directly
+            st.markdown(msg["content"], unsafe_allow_html=True)
+        else:
+            # Regular message - use standard styling
+            role_class = "user" if msg["role"] == "User" else "bot"
+            avatar = "👤" if msg["role"] == "User" else "🐔"
+            label = f"{avatar} {msg['role']}"
+            
+            # Special styling for thinking messages
+            content = msg["content"]
+            if msg.get("is_thinking"):
+                content = f"<div class='thinking-message'>{content}</div>"
 
-        st.markdown(
-            f"""
-            <div class='msg {role_class}'>
-                <div class='role'>{label}</div>
-                <div>{content}</div>
-                <div class='timestamp'>{msg.get('time', '')}</div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+            st.markdown(
+                f"""
+                <div class='msg {role_class}'>
+                    <div class='role'>{label}</div>
+                    <div>{content}</div>
+                    <div class='timestamp'>{msg.get('time', '')}</div>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
 
 st.markdown("</div>", unsafe_allow_html=True)
 
