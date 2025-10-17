@@ -298,39 +298,104 @@ class ReActPoultryAgent:
         }
     
     def _identify_intent(self, query: str) -> str:
-        """Enhanced intent recognition"""
-        query_lower = query.lower()
+        """Enhanced intent recognition with context understanding"""
+        query_lower = query.lower().strip()
         
-        if any(term in query_lower for term in ['weather', 'temperature', 'rain']):
-            return "weather_inquiry"
-        elif any(term in query_lower for term in ['feed cost', 'calculate', 'budget']):
-            return "feed_calculation"
-        elif any(term in query_lower for term in ['remind', 'vaccine', 'schedule']):
+        # First, check for clear action-oriented patterns
+        action_patterns = {
+            "weather_inquiry": [
+                r'weather.*in', r'what.*weather', r'temperature.*in', 
+                r'how.*weather.*in', r'check.*weather', r'forecast.*in'
+            ],
+            "feed_calculation": [
+                r'calculate.*feed', r'feed.*cost', r'how much.*feed', 
+                r'budget.*feed', r'total cost.*feed', r'price.*feed'
+            ],
+            "vaccination_reminder": [
+                r'remind me.*vaccine', r'set.*reminder.*vaccine', 
+                r'schedule.*vaccin', r'help.*set.*remind', r'create.*reminder.*vaccin'
+            ],
+            "health_advice": [
+                r'what.*disease', r'symptom.*of', r'treat.*disease', 
+                r'prevent.*disease', r'how.*treat', r'health.*problem'
+            ]
+        }
+        
+        # Check for action-oriented patterns first
+        for intent, patterns in action_patterns.items():
+            for pattern in patterns:
+                if re.search(pattern, query_lower):
+                    return intent
+        
+        # Check for standalone command words (only if they're the main intent)
+        if re.search(r'^(help me |please )?(set|create).*remind', query_lower):
             return "vaccination_reminder"
-        elif any(term in query_lower for term in ['disease', 'symptom', 'treatment']):
+        if re.search(r'^(help me |please )?calculate.*feed', query_lower):
+            return "feed_calculation"
+        if re.search(r'^(help me |please )?check.*weather', query_lower):
+            return "weather_inquiry"
+        
+        # Check for general inquiry patterns
+        if any(term in query_lower for term in ['disease', 'symptom', 'treatment', 'health']):
             return "health_advice"
-        elif any(term in query_lower for term in ['housing', 'ventilation', 'shelter']):
+        if any(term in query_lower for term in ['housing', 'ventilation', 'shelter']):
             return "housing_advice"
-        else:
-            return "general_inquiry"
+        
+        # Negative patterns - exclude these from tool triggers
+        negative_patterns = [
+            r'forgot.*remind', r'didn\'t.*remind', r'missed.*remind',
+            r'yesterday.*remind', r'last.*remind', r'already.*remind'
+        ]
+        
+        for pattern in negative_patterns:
+            if re.search(pattern, query_lower):
+                return "general_inquiry"
+        
+        return "general_inquiry"
     
     def _check_required_info(self, query: str, intent: str) -> List[str]:
-        """Reason about missing information needed to complete the task"""
+        """Enhanced reasoning about missing information"""
         missing = []
+        query_lower = query.lower()
         
         if intent == "feed_calculation":
+            # More flexible parameter detection
             numbers = re.findall(r'\d+\.?\d*', query)
             if len(numbers) < 3:
-                missing.append("feed_parameters")
+                # Check if the numbers are mentioned but not extracted
+                if not any(word in query_lower for word in ['bird', 'chicken', 'flock']):
+                    missing.append("bird_count")
+                if not any(word in query_lower for word in ['feed', 'kg', 'kilogram', 'consum']):
+                    missing.append("feed_amount") 
+                if not any(word in query_lower for word in ['price', 'cost', '₦', 'naira']):
+                    missing.append("price_info")
+            else:
+                # We have numbers, but verify they make sense
+                num_birds, feed_per_bird, price_per_kg = extract_feed_parameters(query)
+                if not all([num_birds, feed_per_bird, price_per_kg]):
+                    missing.append("feed_parameters")
         
         elif intent == "vaccination_reminder":
-            if not any(vaccine in query.lower() for vaccine in ['newcastle', 'gumboro', 'coccidiosis']):
+            # More nuanced vaccine detection
+            vaccine_found = any(vaccine in query_lower for vaccine in 
+                               ['newcastle', 'gumboro', 'coccidiosis', 'marek', 'ibd'])
+            
+            # Check for timing with more patterns
+            timing_found = any(pattern in query_lower for pattern in 
+                              ['tomorrow', 'monday', 'tuesday', 'wednesday', 'thursday', 
+                               'friday', 'saturday', 'sunday', 'next week', 'next month',
+                               'in \d+ days', 'in \d+ weeks'])
+            
+            if not vaccine_found:
                 missing.append("vaccine_type")
-            if not any(word in query.lower() for word in ['tomorrow', 'monday', 'next', 'date']):
+            if not timing_found:
                 missing.append("timing")
         
         elif intent == "weather_inquiry":
-            if "in " not in query.lower():
+            # Better location detection
+            location_found = "in " in query_lower or any(city in query_lower for city in 
+                                                        ['lagos', 'abuja', 'kano', 'ibadan', 'port harcourt'])
+            if not location_found:
                 missing.append("location")
         
         return missing
