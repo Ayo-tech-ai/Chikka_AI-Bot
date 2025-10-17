@@ -7,6 +7,9 @@ from typing import List, Dict
 import datetime
 import re
 from datetime import timezone, timedelta
+import base64
+from gtts import gTTS
+import io
 
 # Import tools
 from tools.weather import get_weather
@@ -26,9 +29,31 @@ if "faiss_loaded" not in st.session_state:
 if "conversation_context" not in st.session_state:
     st.session_state.conversation_context = ""
 
+if "audio_enabled" not in st.session_state:
+    st.session_state.audio_enabled = True
+
 # Add a key for input clearing
 if "clear_input" not in st.session_state:
     st.session_state.clear_input = False
+
+# -------------------------
+# Text-to-Speech Function
+# -------------------------
+
+def text_to_speech(text):
+    """Convert text to speech and return audio data as base64"""
+    try:
+        # Clean the text - remove HTML tags for audio generation
+        clean_text = re.sub('<[^<]+?>', '', text)
+        tts = gTTS(text=clean_text, lang='en', slow=False)
+        audio_buffer = io.BytesIO()
+        tts.write_to_fp(audio_buffer)
+        audio_buffer.seek(0)
+        audio_base64 = base64.b64encode(audio_buffer.read()).decode()
+        return audio_base64
+    except Exception as e:
+        st.error(f"Error generating audio: {e}")
+        return None
 
 # -------------------------
 # ReAct Agent Class with Enhanced State Management
@@ -480,7 +505,7 @@ class ReActPoultryAgent:
 
 st.set_page_config(page_title="Chikka AI Assistant", layout="centered")
 
-# Updated CSS for improved chat interface with tool response styling
+# Updated CSS for improved chat interface with tool response styling and audio controls
 st.markdown(
     """
     <style>
@@ -597,6 +622,29 @@ st.markdown(
         font-size: 12px;
         color: #856404;
     }
+    
+    /* Audio Controls */
+    .audio-controls {
+        margin-top: 10px;
+        padding: 8px;
+        background-color: #f8f9fa;
+        border-radius: 8px;
+        border: 1px solid #e9ecef;
+        max-width: 90%;
+    }
+    .audio-btn {
+        background-color: #007bff;
+        color: white;
+        border: none;
+        padding: 5px 10px;
+        border-radius: 4px;
+        cursor: pointer;
+        margin-right: 5px;
+    }
+    .audio-btn:hover {
+        background-color: #0056b3;
+    }
+    
     /* Main content padding to prevent overlap with chat input */
     .main .block-container {
         padding-bottom: 100px !important;
@@ -1041,13 +1089,20 @@ def get_local_time():
     return datetime.datetime.now(gmt_plus_one).strftime("%H:%M")
 
 # -------------------------
-# Sidebar with Tool Instructions
+# Sidebar with Tool Instructions and Audio Settings
 # -------------------------
 
 def show_tool_instructions_sidebar():
     with st.sidebar:
         st.header("🎯 How to Use Tools")
         st.markdown("Learn how to effectively use Chikka's special features!")
+        
+        st.markdown("---")
+        
+        # Audio Settings Section
+        st.subheader("🔊 Audio Settings")
+        st.session_state.audio_enabled = st.checkbox("Enable Text-to-Speech", value=st.session_state.audio_enabled)
+        st.info("When enabled, you can listen to bot responses by clicking the audio button.")
         
         st.markdown("---")
         
@@ -1114,6 +1169,7 @@ def show_tool_instructions_sidebar():
         - **Plain style** = General knowledge answers  
         - **Icons** show which tool was used
         - **Clarification requests** mean I need more info
+        - **Audio players** appear when text-to-speech is enabled
         """)
 
 # -------------------------
@@ -1160,6 +1216,24 @@ else:
         if 'tool-response' in msg["content"]:
             # Tool response - render as HTML directly
             st.markdown(msg["content"], unsafe_allow_html=True)
+            
+            # Add audio controls for tool responses when audio is enabled
+            if st.session_state.audio_enabled and msg["role"] == "ChikkaBot":
+                # Extract clean text from the HTML response for audio
+                clean_text = re.sub('<[^<]+?>', '', msg["content"])
+                audio_data = text_to_speech(clean_text)
+                
+                if audio_data:
+                    # Create audio player
+                    audio_html = f"""
+                    <div class='audio-controls'>
+                        <audio controls style="width: 100%;">
+                            <source src="data:audio/mp3;base64,{audio_data}" type="audio/mp3">
+                            Your browser does not support the audio element.
+                        </audio>
+                    </div>
+                    """
+                    st.markdown(audio_html, unsafe_allow_html=True)
         else:
             # Regular message - use standard styling
             role_class = "user" if msg["role"] == "User" else "bot"
@@ -1181,6 +1255,22 @@ else:
                 """,
                 unsafe_allow_html=True
             )
+            
+            # Add audio controls for bot messages when audio is enabled
+            if st.session_state.audio_enabled and msg["role"] == "ChikkaBot" and not msg.get("is_thinking"):
+                audio_data = text_to_speech(msg["content"])
+                
+                if audio_data:
+                    # Create audio player
+                    audio_html = f"""
+                    <div class='audio-controls'>
+                        <audio controls style="width: 100%;">
+                            <source src="data:audio/mp3;base64,{audio_data}" type="audio/mp3">
+                            Your browser does not support the audio element.
+                        </audio>
+                    </div>
+                    """
+                    st.markdown(audio_html, unsafe_allow_html=True)
 
 st.markdown("</div>", unsafe_allow_html=True)
 
