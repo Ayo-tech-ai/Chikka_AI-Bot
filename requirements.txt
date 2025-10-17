@@ -7,3 +7,5 @@ faiss-cpu
 huggingface-hub
 sentence-transformers
 requests
+gtts
+git+https://github.com/openai/whisper.git
